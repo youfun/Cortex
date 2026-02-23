@@ -1,0 +1,211 @@
+name: Build Release (Custom BEAM)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master, test-custom-beam]
+
+env:
+  MIX_ENV: prod
+  OTP_VERSION: "28.3.1"
+  OTP_SHORT: "28"
+  ELIXIR_VERSION: "1.19.5"
+  UBUNTU_VERSION: "22.04"
+
+jobs:
+  build-server:
+    name: Server Binary (Linux x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # 使用自定义脚本安装 BEAM
+      - name: Setup Custom BEAM
+        run: |
+          chmod +x .github/scripts/setup-beam.sh
+          .github/scripts/setup-beam.sh
+
+      # 缓存 Erlang/Elixir 安装
+      - name: Cache BEAM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/erlang_${{ env.OTP_SHORT }}
+            ~/elixir_otp${{ env.OTP_SHORT }}
+          key: beam-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}
+          restore-keys: |
+            beam-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      # 验证版本
+      - name: Verify BEAM versions
+        run: |
+          erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
+          elixir --version
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Hex/Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      # 缓存依赖
+      - name: Cache Mix Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-
+
+      - name: Fetch Deps
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Build Assets
+        run: |
+          mix assets.setup
+          mix assets.deploy
+
+      - name: Build Server Binary (Burrito)
+        run: mix release cortex --overwrite
+
+      - name: Upload Server Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-server-linux-x86_64
+          path: burrito_out/cortex_linux
+
+  build-desktop:
+    name: Desktop (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x86_64
+            os: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+            burrito-target: linux
+            sidecar-triple: x86_64-unknown-linux-gnu
+            sidecar-ext: ""
+            burrito-bin: cortex_linux
+            use-custom-beam: true
+
+          # Windows 和 macOS 暂时使用官方 action
+          - label: Windows x86_64
+            os: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            burrito-target: windows
+            sidecar-triple: x86_64-pc-windows-msvc
+            sidecar-ext: .exe
+            burrito-bin: cortex_windows.exe
+            use-custom-beam: false
+
+          - label: macOS aarch64
+            os: macos-latest
+            rust-target: aarch64-apple-darwin
+            burrito-target: macos_m1
+            sidecar-triple: aarch64-apple-darwin
+            sidecar-ext: ""
+            burrito-bin: cortex_macos_m1
+            use-custom-beam: false
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux: 使用自定义 BEAM
+      - name: Setup Custom BEAM (Linux)
+        if: matrix.use-custom-beam
+        run: |
+          chmod +x .github/scripts/setup-beam.sh
+          .github/scripts/setup-beam.sh
+
+      - name: Cache BEAM (Linux)
+        if: matrix.use-custom-beam
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/erlang_${{ env.OTP_SHORT }}
+            ~/elixir_otp${{ env.OTP_SHORT }}
+          key: beam-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}
+
+      # Windows/macOS: 使用官方 action
+      - name: Setup BEAM (Official)
+        if: ${{ !matrix.use-custom-beam }}
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Hex/Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Cache Mix Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+
+      - name: Fetch Deps
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Build Assets
+        run: |
+          mix assets.setup
+          mix assets.deploy
+
+      - name: Build Backend Sidecar (Burrito)
+        run: mix release cortex --overwrite
+
+      - name: Place sidecar binary for Tauri
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          cp "burrito_out/${{ matrix.burrito-bin }}" \
+             "src-tauri/binaries/cortex_backend-${{ matrix.sidecar-triple }}${{ matrix.sidecar-ext }}"
+          ls -la src-tauri/binaries/
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build Tauri Desktop App
+        working-directory: src-tauri
+        run: cargo tauri build --target ${{ matrix.rust-target }}
+
+      - name: Upload Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-desktop-${{ matrix.label }}
+          path: |
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**

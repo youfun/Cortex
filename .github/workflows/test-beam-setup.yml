@@ -1,0 +1,101 @@
+name: Test Custom BEAM Setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test-custom-beam]
+  pull_request:
+    paths:
+      - '.github/scripts/setup-beam.sh'
+      - '.github/workflows/test-beam-setup.yml'
+
+env:
+  OTP_VERSION: "28.3.1"
+  OTP_SHORT: "28"
+  ELIXIR_VERSION: "1.19.5"
+  UBUNTU_VERSION: "22.04"
+
+jobs:
+  test-custom-beam:
+    name: Test Custom BEAM on Ubuntu ${{ matrix.ubuntu }}
+    strategy:
+      matrix:
+        ubuntu: ["22.04"]
+        include:
+          - ubuntu: "22.04"
+            otp: "28.3.1"
+            otp_short: "28"
+            elixir: "1.19.5"
+    
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Custom BEAM
+        run: |
+          chmod +x .github/scripts/setup-beam.sh
+          .github/scripts/setup-beam.sh
+        env:
+          OTP_VERSION: ${{ matrix.otp }}
+          OTP_SHORT: ${{ matrix.otp_short }}
+          ELIXIR_VERSION: ${{ matrix.elixir }}
+          UBUNTU_VERSION: ${{ matrix.ubuntu }}
+      
+      - name: Verify Erlang Version
+        run: |
+          erl -eval 'io:format("OTP: ~s~n", [erlang:system_info(otp_release)]), halt().' -noshell
+          erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Full version: ~s", [Version]), halt().' -noshell
+      
+      - name: Verify Elixir Version
+        run: |
+          elixir --version
+          elixir -e "IO.puts(\"Elixir: #{System.version()}\")"
+          elixir -e "IO.puts(\"OTP: #{System.otp_release()}\")"
+      
+      - name: Test Mix
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix --version
+      
+      - name: Test Compilation
+        run: |
+          mix new test_app --sup
+          cd test_app
+          mix deps.get
+          mix compile
+          mix test
+      
+      - name: Show Installation Paths
+        run: |
+          echo "Erlang: $(which erl)"
+          echo "Elixir: $(which elixir)"
+          echo "Mix: $(which mix)"
+          ls -la ~/erlang_${{ matrix.otp_short }}/
+          ls -la ~/elixir_otp${{ matrix.otp_short }}/
+
+  compare-with-official:
+    name: Compare with Official Action
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup BEAM (Official)
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+      
+      - name: Verify Versions
+        run: |
+          echo "=== Official Action ==="
+          erl -eval 'io:format("OTP: ~s~n", [erlang:system_info(otp_release)]), halt().' -noshell
+          elixir --version
+      
+      - name: Test Mix
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix --version
