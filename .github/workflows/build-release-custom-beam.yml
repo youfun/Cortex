@@ -47,6 +47,18 @@ jobs:
         with:
           bun-version: latest
 
+      # 安装 Burrito 依赖
+      - name: Install Burrito dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils
+          # 安装 zig
+          wget -q https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+          tar -xf zig-linux-x86_64-0.13.0.tar.xz
+          sudo mv zig-linux-x86_64-0.13.0 /usr/local/zig
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
+
       - name: Install Hex/Rebar
         run: |
           mix local.hex --force
@@ -157,16 +169,47 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
+      # Rust 缓存（重要优化）
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-directories: |
+            ~/.cargo/bin
+          key: ${{ matrix.rust-target }}
+
       - name: Install Linux system deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xz-utils
+          # 安装 zig（Burrito 依赖）
+          wget -q https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+          tar -xf zig-linux-x86_64-0.13.0.tar.xz
+          sudo mv zig-linux-x86_64-0.13.0 /usr/local/zig
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
 
       - name: Install Hex/Rebar
         run: |
           mix local.hex --force
           mix local.rebar --force
+
+      # 安装 Burrito 依赖（跨平台）
+      - name: Install Burrito dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # 安装 zig
+          Invoke-WebRequest -Uri "https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.zip" -OutFile "zig.zip"
+          Expand-Archive -Path "zig.zip" -DestinationPath "C:\"
+          echo "C:\zig-windows-x86_64-0.13.0" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # xz 已经预装在 Windows runner
+
+      - name: Install Burrito dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install zig xz
 
       - name: Cache Mix Dependencies
         uses: actions/cache@v4
@@ -199,7 +242,14 @@ jobs:
           ls -la src-tauri/binaries/
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+        shell: bash
+        run: |
+          # 只在未缓存时安装
+          if ! command -v cargo-tauri &> /dev/null; then
+            cargo install tauri-cli --version "^2" --locked
+          else
+            echo "cargo-tauri already installed: $(cargo-tauri --version)"
+          fi
 
       - name: Build Tauri Desktop App
         working-directory: src-tauri
