@@ -1,0 +1,72 @@
+<div class="flex h-screen w-full bg-slate-900 text-slate-200 overflow-hidden font-sans">
+  <%!-- Left Sidebar with Conversation List (240px) --%>
+  <aside class="w-60 bg-slate-950 border-r border-slate-800 flex flex-col h-full flex-shrink-0">
+    <%!-- Logo --%>
+    <div class="h-14 flex items-center px-4 border-b border-slate-800">
+      <div class="w-10 h-10 bg-teal-600 rounded-lg flex items-center justify-center shadow-lg shadow-teal-500/20">
+        <span class="text-white font-bold text-xl">J</span>
+      </div>
+      <span class="ml-3 text-lg font-semibold text-white">Cortex</span>
+    </div>
+
+    <%!-- Conversation List Area (scrollable) --%>
+    <div class="flex-1 overflow-y-auto">
+      <%= if assigns[:streams] && assigns[:streams][:conversations] do %>
+        <.live_component
+          module={CortexWeb.ConversationListComponent}
+          id="conversation-list"
+          streams={@streams}
+          current_conversation_id={assigns[:current_conversation_id]}
+          archived_count={assigns[:archived_count] || 0}
+        />
+      <% else %>
+        <div class="p-4 text-sm text-slate-500 text-center">
+          No conversations
+        </div>
+      <% end %>
+    </div>
+
+    <%!-- Bottom Navigation (fixed) --%>
+    <div class="border-t border-slate-800 p-3 space-y-1">
+      <.link
+        navigate="/memory"
+        class={[
+          "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+          @active_tab == :memory && "bg-teal-600/10 text-teal-400",
+          @active_tab != :memory && "text-slate-400 hover:bg-slate-800 hover:text-white"
+        ]}
+      >
+        <.icon name="hero-light-bulb" class="w-5 h-5" />
+        <span class="text-sm font-medium">Memory</span>
+      </.link>
+
+      <.link
+        navigate="/settings/channels"
+        class={[
+          "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+          @active_tab == :settings && "bg-teal-600/10 text-teal-400",
+          @active_tab != :settings && "text-slate-400 hover:bg-slate-800 hover:text-white"
+        ]}
+      >
+        <.icon name="hero-cog-6-tooth" class="w-5 h-5" />
+        <span class="text-sm font-medium">Settings</span>
+      </.link>
+
+      <button
+        phx-click="shutdown"
+        data-confirm="Are you sure you want to quit Cortex?"
+        class="w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-slate-400 hover:bg-red-600/10 hover:text-red-400"
+      >
+        <.icon name="hero-power" class="w-5 h-5" />
+        <span class="text-sm font-medium">Quit</span>
+      </button>
+    </div>
+  </aside>
+
+  <%!-- Main Content Area --%>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <.flash_group flash={@flash} />
+
+    {@inner_content}
+  </div>
+</div>

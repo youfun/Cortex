@@ -1,0 +1,237 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/mix-install-debug-config.schema.json",
+  "title": "Mix.install Debug Script Configuration",
+  "description": "Schema for validating configuration structure in Mix.install debug scripts",
+  "type": "object",
+  "properties": {
+    "purpose": {
+      "type": "string",
+      "description": "What this script is debugging or testing",
+      "minLength": 10
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "List of dependencies for Mix.install",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Hex.pm dependency",
+            "properties": {
+              "name": { "type": "string" },
+              "version": { "type": "string" },
+              "override": { "type": "boolean" }
+            },
+            "required": ["name", "version"]
+          },
+          {
+            "type": "object",
+            "description": "GitHub dependency",
+            "properties": {
+              "name": { "type": "string" },
+              "github": { "type": "string" },
+              "branch": { "type": "string" },
+              "ref": { "type": "string" },
+              "tag": { "type": "string" },
+              "override": { "type": "boolean" }
+            },
+            "required": ["name", "github"]
+          },
+          {
+            "type": "object",
+            "description": "Local path dependency",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "override": { "type": "boolean" }
+            },
+            "required": ["name", "path"]
+          }
+        ]
+      }
+    },
+    "environment": {
+      "type": "object",
+      "description": "Environment configuration",
+      "properties": {
+        "required_vars": {
+          "type": "array",
+          "description": "List of required environment variables",
+          "items": { "type": "string" }
+        },
+        "optional_vars": {
+          "type": "object",
+          "description": "Optional variables with defaults",
+          "additionalProperties": { "type": "string" }
+        },
+        "dotenv_path": {
+          "type": "string",
+          "description": "Path to .env file (defaults to auto-discovery)"
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "description": "Script-specific configuration",
+      "properties": {
+        "api_endpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retry_attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "description": "List of test scenarios in the script",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Test name/description"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["api_call", "function_test", "integration", "comparison", "mock"]
+          },
+          "expected_outcome": {
+            "type": "string",
+            "description": "What should happen"
+          }
+        },
+        "required": ["name", "type"]
+      }
+    },
+    "files": {
+      "type": "object",
+      "description": "File paths used by the script",
+      "properties": {
+        "input": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Input files (images, test data, etc.)"
+        },
+        "output": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Output files generated"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Script metadata",
+      "properties": {
+        "author": { "type": "string" },
+        "created": { 
+          "type": "string",
+          "format": "date"
+        },
+        "issue_reference": {
+          "type": "string",
+          "description": "GitHub issue, Jira ticket, etc."
+        },
+        "related_docs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Links to related documentation"
+        }
+      }
+    }
+  },
+  "required": ["purpose", "dependencies"],
+  "examples": [
+    {
+      "purpose": "Debug R2 delete signature issues with AWS Signature v4",
+      "dependencies": [
+        {
+          "name": "req",
+          "version": "~> 0.5"
+        },
+        {
+          "name": "aws_signature",
+          "version": "~> 0.3"
+        }
+      ],
+      "environment": {
+        "required_vars": [
+          "STORAGE_ACCESS_KEY_ID",
+          "STORAGE_SECRET_ACCESS_KEY",
+          "STORAGE_ENDPOINT"
+        ],
+        "optional_vars": {
+          "STORAGE_REGION": "auto",
+          "STORAGE_BUCKET": "test-bucket"
+        }
+      },
+      "config": {
+        "api_endpoint": "https://account.r2.cloudflarestorage.com",
+        "timeout": 30000
+      },
+      "tests": [
+        {
+          "name": "DELETE request with body_digest",
+          "type": "api_call",
+          "expected_outcome": "200 or 204 response"
+        },
+        {
+          "name": "Compare with curl command",
+          "type": "comparison",
+          "expected_outcome": "Both succeed with same signature"
+        }
+      ],
+      "metadata": {
+        "issue_reference": "#123",
+        "related_docs": [
+          "docs/plan/MIX_INSTALL_DEBUG_GUIDE.md"
+        ]
+      }
+    },
+    {
+      "purpose": "Test ReqLLM multimodal API with vision models",
+      "dependencies": [
+        {
+          "name": "req",
+          "version": "~> 0.5"
+        },
+        {
+          "name": "req_llm",
+          "version": "~> 1.0"
+        }
+      ],
+      "environment": {
+        "required_vars": ["OPENROUTER_API_KEY"]
+      },
+      "files": {
+        "input": ["./test_image.png"]
+      },
+      "tests": [
+        {
+          "name": "Text-only request",
+          "type": "api_call",
+          "expected_outcome": "Text response from model"
+        },
+        {
+          "name": "Image analysis with ContentPart API",
+          "type": "api_call",
+          "expected_outcome": "Image description from vision model"
+        },
+        {
+          "name": "Base64 vs binary comparison",
+          "type": "comparison",
+          "expected_outcome": "Both formats work correctly"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: lib/jido_studio_web/components/core_components.ex:342
+#, elixir-autogen, elixir-format
+msgid "Actions"
+msgstr ""
+
+#: lib/jido_studio_web/live/components/jido_components.ex:93
+#, elixir-autogen, elixir-format
+msgid "Archive Conversation"
+msgstr ""
+
+#: lib/jido_studio_web/live/components/jido_components.ex:101
+#, elixir-autogen, elixir-format
+msgid "Are you sure you want to delete this conversation?"
+msgstr ""
+
+#: lib/jido_studio_web/components/layouts.ex:65
+#: lib/jido_studio_web/components/layouts.ex:77
+#, elixir-autogen, elixir-format
+msgid "Attempting to reconnect"
+msgstr ""
+
+#: lib/jido_studio_web/live/components/jido_components.ex:102
+#, elixir-autogen, elixir-format
+msgid "Delete Conversation"
+msgstr ""
+
+#: lib/jido_studio_web/live/jido_live.ex:1493
+#, elixir-autogen, elixir-format
+msgid "Execution Status"
+msgstr ""
+
+#: lib/jido_studio_web/live/jido_live.ex:1452
+#, elixir-autogen, elixir-format
+msgid "Messages"
+msgstr ""
+
+#: lib/jido_studio_web/live/components/jido_components.ex:27
+#, elixir-autogen, elixir-format
+msgid "Native (No ACP)"
+msgstr ""
+
+#: lib/jido_studio_web/live/components/jido_components.ex:53
+#, elixir-autogen, elixir-format
+msgid "New Conversation"
+msgstr ""
+
+#: lib/jido_studio_web/components/layouts.ex:72
+#, elixir-autogen, elixir-format
+msgid "Something went wrong!"
+msgstr ""
+
+#: lib/jido_studio_web/live/jido_live.ex:1455
+#, elixir-autogen, elixir-format
+msgid "Tasks"
+msgstr ""
+
+#: lib/jido_studio_web/live/components/jido_components.ex:28
+#, elixir-autogen, elixir-format
+msgid "Use local LLM model"
+msgstr ""
+
+#: lib/jido_studio_web/components/layouts.ex:60
+#, elixir-autogen, elixir-format
+msgid "We can't find the internet"
+msgstr ""
+
+#: lib/jido_studio_web/components/core_components.ex:74
+#, elixir-autogen, elixir-format
+msgid "close"
+msgstr ""

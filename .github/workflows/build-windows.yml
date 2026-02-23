@@ -1,0 +1,69 @@
+name: Build Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      MIX_ENV: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.14.5"
+          otp-version: "27.1"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: "latest"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Hex/Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Fetch Deps
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Build Assets
+        run: |
+          mix assets.setup
+          mix assets.deploy
+
+      - name: Build Backend (Burrito)
+        run: mix release cortex --overwrite
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build Tauri GUI
+        working-directory: src-tauri
+        run: cargo tauri build
+
+      - name: Upload Backend Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-windows-backend
+          path: burrito_out/*.exe
+
+      - name: Upload GUI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-windows-gui
+          path: |
+            src-tauri/target/release/bundle/**
+            src-tauri/target/release/*.exe

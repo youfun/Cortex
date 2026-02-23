@@ -1,0 +1,65 @@
+@import "tailwindcss" source("../..");
+
+@plugin "../vendor/heroicons.js";
+
+/* Cortex Styles */
+@layer base {
+  :root {
+    --background: 220 16% 6%;
+    --foreground: 210 40% 98%;
+    --primary: 172 66% 40%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 172 66% 40%;
+    --radius: 0.75rem;
+  }
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+
+/* Phoenix LiveView specific classes */
+.phx-no-feedback.invalid-feedback,
+.phx-no-feedback .invalid-feedback {
+  display: none;
+}
+
+.phx-click-loading {
+  opacity: 0.5;
+  transition: opacity 1s ease-out;
+}
+
+.phx-disconnected {
+  cursor: wait;
+}
+
+.phx-disconnected * {
+  pointer-events: none;
+}
+
+/* Markdown Content Styling */
+.markdown-content h1 { @apply text-xl font-bold mt-4 mb-2; }
+.markdown-content h2 { @apply text-lg font-bold mt-3 mb-2; }
+.markdown-content h3 { @apply text-base font-bold mt-2 mb-1; }
+.markdown-content p { @apply mb-3; }
+.markdown-content p:last-child { @apply mb-0; }
+.markdown-content ul { @apply list-disc ml-5 mb-3; }
+.markdown-content ol { @apply list-decimal ml-5 mb-3; }
+.markdown-content li { @apply mb-1; }
+.markdown-content pre { @apply bg-slate-900 rounded-lg p-4 my-3 overflow-x-auto border border-slate-700 font-mono text-xs; }
+.markdown-content code { @apply bg-slate-900 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs; }
+.markdown-content pre code { @apply p-0 bg-transparent text-slate-300; }
+.markdown-content blockquote { @apply border-l-4 border-slate-600 pl-4 italic my-3 text-slate-400; }
+.markdown-content a { @apply text-teal-400 hover:underline; }
+.markdown-content table { @apply w-full border-collapse mb-3; }
+.markdown-content th, .markdown-content td { @apply border border-slate-700 px-3 py-2 text-sm; }
+.markdown-content th { @apply bg-slate-900 font-bold; }

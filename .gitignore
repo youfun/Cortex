@@ -1,0 +1,99 @@
+# Archives and dev documents
+/dev-docs/
+
+# Local tool configurations (now moved to dev-docs)
+.beads/
+.claude/
+.elixir_ls/
+.vscode/
+.venv/
+test_output.log
+
+# Build artifacts
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where 3rd-party dependencies like ExDoc output generated docs.
+/doc/
+
+# Ignore .fetch files in case you like to edit your project deps locally.
+/.fetch
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# Ignore package tarball (built via "mix hex.build").
+jido_studio-*.tar
+
+# Ignore assets that are produced by build tools.
+/priv/static/assets/
+
+# Ignore digested assets cache.
+/priv/static/cache_manifest.json
+
+# In case you use Node.js/npm, you want to ignore these.
+npm-debug.log
+/assets/node_modules/
+
+# Database files
+*.db
+*.db-*
+
+# Golang
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+priv/static/images/logo-*.svg.gz
+priv/static/robots-*.txt.gz
+priv/static/robots-*.txt
+priv/static/images/logo-*.svg
+priv/static/favicon-*.ico
+burrito_out
+
+arbor-main/lib/credo/checks/security/unsafe_binary_to_term.ex
+.env
+.jido/tape/
+burrito_out/jido_studio_linux
+burrito_out/.env-for-test
+burrito_out/jido_studio_linux
+.github-otherproject/
+
+.github/*:Zone.Identifier
+.github/*:Zone.Identifier
+
+
+docs/bub-main/
+
+# BDD generated test files - regenerate locally with: .github/tools/bddc-linux-x86_64 compile
+test/bdd_generated/
+scripts/nano_banana.exs
+tape/
+
+# local files not tracked
+rename.exs
+output.txt
+history.jsonl

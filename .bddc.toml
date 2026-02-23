@@ -1,0 +1,13 @@
+[global]
+namespace = "Cortex"
+project_root = "."
+runtime_module = "Cortex.BDD.Instructions.V1"
+in = "test/bdd/dsl"
+out = "test/bdd_generated"
+docs_root = "test/bdd/dsl"
+test_case = "ExUnit.Case"
+module_prefix = "Cortex.BDD.Generated"
+instructions = "priv/bdd/instructions_v1.exs"
+
+[runtime.caps.sync]
+out = "test/bdd/_generated/runtime_caps_v1.exs"
