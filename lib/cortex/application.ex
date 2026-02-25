@@ -131,6 +131,8 @@ defmodule Cortex.Application do
         Cortex.Config.Metadata.reload()
         # 加载 ConfigExtension
         Cortex.Extensions.Manager.load(Cortex.Extensions.ConfigExtension)
+        # 加载 SearchExtension
+        Cortex.Extensions.Manager.load(Cortex.Extensions.SearchExtension)
         Logger.info("[Application] load_model_metadata completed successfully.")
       end)
     end

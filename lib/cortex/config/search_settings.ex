@@ -40,6 +40,15 @@ defmodule Cortex.Config.SearchSettings do
     case result do
       {:ok, settings} ->
         :persistent_term.put({__MODULE__, :cached}, settings)
+
+        Cortex.SignalHub.emit("config.search.updated", %{
+          provider: "config",
+          event: "search",
+          action: "updated",
+          actor: "system",
+          origin: %{channel: "config", client: "search_settings", platform: "server"}
+        }, source: "/config/search_settings")
+
         {:ok, settings}
 
       error ->

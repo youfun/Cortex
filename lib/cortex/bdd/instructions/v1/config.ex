@@ -89,6 +89,11 @@ defmodule Cortex.BDD.Instructions.V1.Config do
       # ---- search settings ----
       {:given, :search_settings_clean} ->
         :persistent_term.erase({SearchSettings, :cached})
+        if Application.get_env(:cortex, :env) == :test do
+          Ecto.Adapters.SQL.Sandbox.checkout(Cortex.Repo)
+          Ecto.Adapters.SQL.Sandbox.mode(Cortex.Repo, {:shared, self()})
+        end
+        Cortex.Repo.delete_all(SearchSettings)
         {:ok, ctx}
 
       {:when, :get_search_settings} ->
@@ -97,6 +102,8 @@ defmodule Cortex.BDD.Instructions.V1.Config do
 
       {:when, :update_search_provider} ->
         result = SearchSettings.update_settings(%{default_provider: args.provider})
+        # 等待 SignalRecorder 将信号写入 history.jsonl
+        Process.sleep(50)
         {:ok, Map.put(ctx, :last_update_result, result)}
 
       {:then, :search_provider_is} ->

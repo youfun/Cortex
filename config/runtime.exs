@@ -35,6 +35,19 @@ config :cortex, :telegram,
           str -> str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
         end)
 
+config :cortex, :search,
+  default_provider: :tavily,
+  providers: [
+    brave: [
+      api_key: System.get_env("BRAVE_API_KEY"),
+      base_url: "https://api.search.brave.com/res/v1"
+    ],
+    tavily: [
+      api_key: System.get_env("TAVILY_API_KEY"),
+      base_url: "https://api.tavily.com"
+    ]
+  ]
+
 parse_int = fn env, default ->
   case System.get_env(env) do
     nil ->
