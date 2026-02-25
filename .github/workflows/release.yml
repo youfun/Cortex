@@ -1,5 +1,12 @@
 name: Release
 
+# GitHub Actions now default to read-only permissions for the GITHUB_TOKEN.
+# creating a release requires write access to repository contents, so we
+# explicitly grant it here. 403 errors during `action-gh-release` are usually
+# caused by missing permissions.
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main, pre-release, dev]
@@ -358,6 +365,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          # provide the GITHUB_TOKEN explicitly, and ensure workflow permissions
+          # (see top of file) allow write access to contents. Without write
+          # permission the action returns HTTP 403 "Resource not accessible".
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           name: ${{ needs.prepare.outputs.is_prerelease == 'true' && format('Dev Build {0}', needs.prepare.outputs.release_tag) || format('Release {0}', needs.prepare.outputs.release_tag) }}
           prerelease: ${{ needs.prepare.outputs.is_prerelease == 'true' }}

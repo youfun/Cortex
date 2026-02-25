@@ -658,7 +658,22 @@ defmodule CortexWeb.AgentLiveHelpers do
       source: "/ui/web/chat"
     )
 
+    maybe_trigger_title_generation(socket, final_content)
+
     socket
+  end
+
+  defp maybe_trigger_title_generation(socket, content) do
+    conversation_id = socket.assigns.current_conversation_id
+    model_name = get_current_model_name(socket)
+
+    case Conversations.load_display_messages(conversation_id) do
+      messages when length(messages) <= 1 ->
+        Cortex.Conversations.TitleGenerator.maybe_generate(conversation_id, content, model_name)
+
+      _ ->
+        :ok
+    end
   end
 
   defp build_ui_message(attrs) do

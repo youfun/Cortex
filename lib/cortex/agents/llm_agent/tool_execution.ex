@@ -230,6 +230,31 @@ defmodule Cortex.Agents.LLMAgent.ToolExecution do
                  %{tool_name: call_data.name, status: "ok", elapsed_ms: elapsed_ms}
                })
 
+             {:error, {:approval_required, reason}, _ms} ->
+               Logger.debug(
+                 "[ToolExecution] Tool '#{call_data.name}' requires approval: #{reason}"
+               )
+
+               req_id = "approval_#{call_data.id}_#{System.system_time(:millisecond)}"
+
+               SignalHub.emit(
+                 "permission.request",
+                 %{
+                   provider: "agent",
+                   event: "permission",
+                   action: "request",
+                   actor: "tool_interceptor",
+                   origin: %{channel: "agent", client: "llm_agent", platform: "server"},
+                   session_id: session_id,
+                   tool: call_data.name,
+                   reason: reason,
+                   request_id: req_id
+                 },
+                 source: "/agent/llm/tool"
+               )
+
+               send(parent, {:permission_required, req_id, call_data})
+
              {:error, {:permission_denied, req_id}, _ms} ->
                Logger.debug(
                  "[ToolExecution] Tool '#{call_data.name}' requires permission: #{req_id}"

@@ -11,21 +11,27 @@ defmodule Cortex.Tools.ToolRunner do
   def execute(tool_name, args, ctx) do
     case Registry.get(tool_name) do
       {:ok, tool} ->
-        normalized_args = normalize_args(args)
+        case Cortex.Tools.ToolInterceptor.check(tool_name, args, ctx) do
+          {:approval_required, reason} ->
+            {:error, {:approval_required, reason}, 0}
 
-        {elapsed_us, result} =
-          :timer.tc(fn ->
-            tool.module.execute(normalized_args, ctx)
-          end)
+          :ok ->
+            normalized_args = normalize_args(args)
 
-        elapsed_ms = div(elapsed_us, 1000)
+            {elapsed_us, result} =
+              :timer.tc(fn ->
+                tool.module.execute(normalized_args, ctx)
+              end)
 
-        truncated = maybe_truncate(tool_name, result)
-        redacted = maybe_redact(truncated, tool_name, normalized_args)
+            elapsed_ms = div(elapsed_us, 1000)
 
-        case redacted do
-          {:ok, output} -> {:ok, output, elapsed_ms}
-          {:error, reason} -> {:error, reason, elapsed_ms}
+            truncated = maybe_truncate(tool_name, result)
+            redacted = maybe_redact(truncated, tool_name, normalized_args)
+
+            case redacted do
+              {:ok, output} -> {:ok, output, elapsed_ms}
+              {:error, reason} -> {:error, reason, elapsed_ms}
+            end
         end
 
       :error ->

@@ -28,6 +28,10 @@ defmodule CortexWeb.SettingsLive.Index do
     assign(socket, :page_title, "Channel Settings")
   end
 
+  defp apply_action(socket, :search, _params) do
+    assign(socket, :page_title, "Search Settings")
+  end
+
   defp apply_action(socket, :models, _params) do
     assign(socket, :page_title, "Model Management")
   end
@@ -137,6 +141,18 @@ defmodule CortexWeb.SettingsLive.Index do
             <.icon name="hero-cpu-chip" class="w-5 h-5" />
             <span class="text-sm font-medium">Models</span>
           </.link>
+
+          <.link
+            patch={~p"/settings/search"}
+            class={[
+              "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors",
+              @live_action == :search && "bg-teal-600/10 text-teal-400 border-l-2 border-teal-500",
+              @live_action != :search && "text-slate-400 hover:bg-slate-800 hover:text-white"
+            ]}
+          >
+            <.icon name="hero-magnifying-glass" class="w-5 h-5" />
+            <span class="text-sm font-medium">Search</span>
+          </.link>
         </nav>
       </aside>
 
@@ -159,6 +175,11 @@ defmodule CortexWeb.SettingsLive.Index do
               page_title={@page_title}
               live_action={action}
               patch={~p"/settings/models"}
+            />
+          <% :search -> %>
+            <.live_component
+              module={CortexWeb.SettingsLive.SearchComponent}
+              id="search-settings"
             />
         <% end %>
       </div>

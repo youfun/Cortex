@@ -13,7 +13,9 @@ defmodule Cortex.Config.Settings do
   @default_settings %{
     "skill_default_model" => "gemini-3-flash",
     "arena_primary_model" => nil,
-    "arena_secondary_model" => nil
+    "arena_secondary_model" => nil,
+    "title_generation" => "disabled",
+    "title_model" => nil
   }
 
   # ==================== 默认模型管理 ====================
@@ -95,5 +97,23 @@ defmodule Cortex.Config.Settings do
   defp set_global_setting(key, value) do
     :persistent_term.put({__MODULE__, key}, value)
     {:ok, value}
+  end
+
+  # ==================== 标题生成配置 ====================
+
+  def get_title_generation do
+    get_global_setting("title_generation") || @default_settings["title_generation"]
+  end
+
+  def get_title_model do
+    get_global_setting("title_model")
+  end
+
+  def set_title_generation(mode) when mode in ["disabled", "conversation", "model"] do
+    set_global_setting("title_generation", mode)
+  end
+
+  def set_title_model(model_name) when is_binary(model_name) do
+    set_global_setting("title_model", model_name)
   end
 end

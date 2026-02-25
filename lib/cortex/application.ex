@@ -53,6 +53,8 @@ defmodule Cortex.Application do
         Cortex.Extensions.Manager,
         # 工具注册表
         Cortex.Tools.Registry,
+        # Search config watcher
+        Cortex.Search.ConfigWatcher,
         # 技能系统
         Cortex.Skills.Watcher,
         # Jido Agent Runtime (Phase 0: Multi-Agent Coordination)
@@ -127,6 +129,8 @@ defmodule Cortex.Application do
         Cortex.Config.Metadata.load_seeds()
         # 加载到缓存
         Cortex.Config.Metadata.reload()
+        # 加载 ConfigExtension
+        Cortex.Extensions.Manager.load(Cortex.Extensions.ConfigExtension)
         Logger.info("[Application] load_model_metadata completed successfully.")
       end)
     end

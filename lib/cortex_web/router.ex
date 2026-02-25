@@ -33,6 +33,7 @@ defmodule CortexWeb.Router do
       live "/settings/models", SettingsLive.Index, :models
       live "/settings/models/new", SettingsLive.Index, :new_model
       live "/settings/models/:id/edit", SettingsLive.Index, :edit_model
+      live "/settings/search", SettingsLive.Index, :search
     end
   end
 
