@@ -12,7 +12,14 @@ defmodule CortexWeb.JidoLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {workspace, conversations, current_conversation} = init_workspace_conversation()
+    utc_offset_minutes =
+      if connected?(socket) do
+        get_connect_params(socket)["utc_offset_minutes"] || 0
+      else
+        0
+      end
+
+    {workspace, conversations, current_conversation} = init_workspace_conversation(utc_offset_minutes)
     session_id = Coordinator.session_id(current_conversation.id)
     available_models = AgentLiveHelpers.list_available_models()
 
@@ -35,8 +42,9 @@ defmodule CortexWeb.JidoLive do
         active_tab: :chat,
         show_editor_sidebar: false,
         chat_subtab: "messages",
-        conversation_files: [],
+        conversation_files: AgentLiveHelpers.restore_conversation_files(current_conversation),
         workspace: workspace,
+        utc_offset_minutes: utc_offset_minutes,
         archived_count: Conversations.count_archived(workspace.id),
         show_model_selector: false,
         show_agent_selector: false,
@@ -71,22 +79,22 @@ defmodule CortexWeb.JidoLive do
     {:ok, socket}
   end
 
-  defp init_workspace_conversation do
+  defp init_workspace_conversation(utc_offset_minutes) do
     workspace = Workspaces.ensure_default_workspace()
     conversations = Conversations.list_conversations(workspace.id)
-    current_conversation = ensure_current_conversation(conversations, workspace.id)
+    current_conversation = ensure_current_conversation(conversations, workspace.id, utc_offset_minutes)
     {workspace, conversations, current_conversation}
   end
 
-  defp ensure_current_conversation([first | _], _workspace_id) do
+  defp ensure_current_conversation([first | _], _workspace_id, _utc_offset_minutes) do
     {:ok, touched} = Conversations.touch_conversation(first)
     touched
   end
 
-  defp ensure_current_conversation([], workspace_id) do
+  defp ensure_current_conversation([], workspace_id, utc_offset_minutes) do
     {:ok, conversation} =
       Conversations.create_conversation(
-        %{title: AgentLiveHelpers.new_conversation_title()},
+        %{title: AgentLiveHelpers.new_conversation_title(utc_offset_minutes)},
         workspace_id
       )
 
@@ -400,20 +408,9 @@ defmodule CortexWeb.JidoLive do
   def handle_info({:open_file_in_editor, path}, socket) do
     send_update(CortexWeb.EditorComponent, id: "editor-component", action: :open_file, path: path)
     
-    # Track file in conversation
-    socket = track_conversation_file(socket, path)
+    socket = AgentLiveHelpers.track_and_persist_file(socket, path)
     
     {:noreply, assign(socket, show_editor_sidebar: true)}
-  end
-
-  defp track_conversation_file(socket, path) do
-    files = socket.assigns.conversation_files
-    
-    if path not in files do
-      assign(socket, conversation_files: [path | files])
-    else
-      socket
-    end
   end
 
   def handle_info({:user_message, content}, socket) do

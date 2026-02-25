@@ -85,6 +85,10 @@ defmodule CortexWeb.AgentLiveHelpers do
 
   def switch_to_conversation(socket, conversation_id) do
     old_conversation_id = socket.assigns.current_conversation_id
+
+    # Persist current conversation's files before switching
+    persist_conversation_files(old_conversation_id, socket.assigns[:conversation_files] || [])
+
     conversation = Conversations.get_conversation!(conversation_id)
     _ = Conversations.touch_conversation(conversation)
 
@@ -103,6 +107,8 @@ defmodule CortexWeb.AgentLiveHelpers do
 
     messages = maybe_append_model_error(messages, model_error)
 
+    restored_files = restore_conversation_files(conversation)
+
     socket =
       socket
       |> assign(
@@ -113,7 +119,8 @@ defmodule CortexWeb.AgentLiveHelpers do
         pending_tool_calls_count: 0,
         streaming_messages: %{},
         plan_stream_text: "",
-        plan_thought_text: ""
+        plan_thought_text: "",
+        conversation_files: restored_files
       )
       |> stream(:conversations, conversations, reset: true)
       |> stream(:messages, messages, reset: true)
@@ -147,11 +154,12 @@ defmodule CortexWeb.AgentLiveHelpers do
   def new_conversation(socket) do
     workspace_id = socket.assigns.workspace.id
     normalized_agent_id = normalize_agent_id(socket.assigns.selected_agent_id)
+    utc_offset = Map.get(socket.assigns, :utc_offset_minutes, 0)
 
     {:ok, new_conv} =
       Conversations.create_conversation(
         %{
-          title: new_conversation_title(),
+          title: new_conversation_title(utc_offset),
           model_config: %{
             model_id: socket.assigns.selected_model_id,
             agent_id: normalized_agent_id
@@ -163,6 +171,9 @@ defmodule CortexWeb.AgentLiveHelpers do
     new_session_id = Coordinator.session_id(new_conv.id)
     emit_conversation_switch(socket, new_conv.id, new_session_id)
 
+    # Persist current conversation's files before switching
+    persist_conversation_files(socket.assigns.current_conversation_id, socket.assigns[:conversation_files] || [])
+
     socket =
       socket
       |> assign(
@@ -171,7 +182,8 @@ defmodule CortexWeb.AgentLiveHelpers do
         is_thinking: false,
         streaming_messages: %{},
         plan_stream_text: "",
-        plan_thought_text: ""
+        plan_thought_text: "",
+        conversation_files: []
       )
       |> stream(:conversations, Conversations.list_conversations(workspace_id), reset: true)
       |> stream(:messages, [], reset: true)
@@ -210,7 +222,7 @@ defmodule CortexWeb.AgentLiveHelpers do
 
         true ->
           {:ok, new_conv} =
-            Conversations.create_conversation(%{title: new_conversation_title()}, workspace_id)
+            Conversations.create_conversation(%{title: new_conversation_title(Map.get(socket.assigns, :utc_offset_minutes, 0))}, workspace_id)
 
           {new_conv.id, []}
       end
@@ -261,7 +273,7 @@ defmodule CortexWeb.AgentLiveHelpers do
 
         true ->
           {:ok, new_conv} =
-            Conversations.create_conversation(%{title: new_conversation_title()}, workspace_id)
+            Conversations.create_conversation(%{title: new_conversation_title(Map.get(socket.assigns, :utc_offset_minutes, 0))}, workspace_id)
 
           {new_conv.id, []}
       end
@@ -474,8 +486,9 @@ defmodule CortexWeb.AgentLiveHelpers do
   def normalize_agent_id("nil"), do: nil
   def normalize_agent_id(agent_id), do: agent_id
 
-  def new_conversation_title do
-    "New Chat #{Calendar.strftime(DateTime.utc_now(), "%H:%M")}"
+  def new_conversation_title(utc_offset_minutes \\ 0) when is_integer(utc_offset_minutes) do
+    now = DateTime.utc_now() |> DateTime.add(utc_offset_minutes * 60, :second)
+    "New Chat #{Calendar.strftime(now, "%H:%M")}"
   end
 
   def signal_payload(%Jido.Signal{data: data}) when is_map(data) do
@@ -610,7 +623,7 @@ defmodule CortexWeb.AgentLiveHelpers do
     emit_context_add(socket, context_msg, "/ui/web/context")
   end
 
-  defp emit_context_add(socket, context_msg, source) do
+  def emit_context_add(socket, context_msg, source) do
     Cortex.SignalHub.emit(
       "agent.context.add",
       %{
@@ -749,6 +762,29 @@ defmodule CortexWeb.AgentLiveHelpers do
           |> stream_ui_message(err_msg)
 
         {:noreply, socket}
+    end
+  end
+
+  def persist_conversation_files(conversation_id, files) do
+    conversation = Conversations.get_conversation!(conversation_id)
+    meta = conversation.meta || %{}
+    new_meta = Map.put(meta, "conversation_files", files)
+    Conversations.update_conversation(conversation, %{meta: new_meta})
+  end
+
+  def restore_conversation_files(conversation) do
+    get_in(conversation.meta || %{}, ["conversation_files"]) || []
+  end
+
+  def track_and_persist_file(socket, path) do
+    files = socket.assigns[:conversation_files] || []
+
+    if path not in files do
+      new_files = [path | files]
+      persist_conversation_files(socket.assigns.current_conversation_id, new_files)
+      assign(socket, conversation_files: new_files)
+    else
+      socket
     end
   end
 
