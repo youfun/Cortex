@@ -10,6 +10,17 @@
     "phoenix": "file:../deps/phoenix",
     "phoenix_html": "file:../deps/phoenix_html",
     "phoenix_live_view": "file:../deps/phoenix_live_view",
+    "codemirror": "^6.0.1",
+    "@codemirror/view": "^6.34.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-css": "^6.3.1",
+    "codemirror-lang-elixir": "*",
     "topbar": "^2.0.2"
   },
   "devDependencies": {

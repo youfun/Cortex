@@ -11,8 +11,9 @@ defmodule Cortex.Application do
     finch_config =
       Application.get_env(:cortex, :finch, name: Cortex.Finch)
 
-    # 在生产环境中，我们可能需要显式运行迁移
-    if System.get_env("RELEASE_NAME") do
+    # 在生产环境或 release 模式下，自动运行数据库迁移
+    # 检测多个条件以确保在所有 release 场景下都能正确初始化数据库
+    if should_prepare_database?() do
       prepare_database()
     end
 
@@ -53,6 +54,8 @@ defmodule Cortex.Application do
         Cortex.Extensions.Manager,
         # 工具注册表
         Cortex.Tools.Registry,
+        # Search config watcher
+        Cortex.Search.ConfigWatcher,
         # 技能系统
         Cortex.Skills.Watcher,
         # Jido Agent Runtime (Phase 0: Multi-Agent Coordination)
@@ -87,10 +90,25 @@ defmodule Cortex.Application do
     :ok
   end
 
+  # 判断是否需要准备数据库（运行迁移）
+  # 在以下情况下返回 true：
+  # 1. 设置了 RELEASE_NAME 环境变量（标准 Elixir release）
+  # 2. MIX_ENV=prod（生产环境）
+  # 3. 使用了 Code.ensure_loaded?/1 检测到是打包后的环境
+  defp should_prepare_database? do
+    System.get_env("RELEASE_NAME") != nil or
+      Application.get_env(:cortex, :env) == :prod or
+      Mix.env() == :prod or
+      not Code.ensure_loaded?(Mix)
+  end
+
   defp prepare_database do
-    repos = Application.get_env(:cortex, :ecto_repos)
+    repos = Application.get_env(:cortex, :ecto_repos, [])
 
     for repo <- repos do
+      # 确保数据库文件所在目录存在
+      ensure_database_directory(repo)
+
       case repo.start_link(pool_size: 2) do
         {:ok, _} ->
           run_migrations(repo)
@@ -105,11 +123,37 @@ defmodule Cortex.Application do
     end
   end
 
+  defp ensure_database_directory(repo) do
+    case Keyword.get(repo.config(), :database) do
+      nil ->
+        :ok
+
+      db_path ->
+        db_dir = Path.dirname(db_path)
+
+        unless File.exists?(db_dir) do
+          Logger.info("[Application] Creating database directory: #{db_dir}")
+          File.mkdir_p!(db_dir)
+        end
+    end
+  end
+
   defp run_migrations(repo) do
     app = Keyword.get(repo.config(), :otp_app)
     migrations_path = Path.join([:code.priv_dir(app) |> to_string(), "repo", "migrations"])
     Logger.info("[Application] Running migrations for #{inspect(repo)} from #{migrations_path}")
-    Ecto.Migrator.run(repo, migrations_path, :up, all: true)
+
+    try do
+      Ecto.Migrator.run(repo, migrations_path, :up, all: true)
+      Logger.info("[Application] Migrations completed successfully for #{inspect(repo)}")
+    rescue
+      e ->
+        Logger.error(
+          "[Application] Migration failed for #{inspect(repo)}: #{Exception.message(e)}"
+        )
+
+        reraise e, __STACKTRACE__
+    end
   end
 
   defp load_model_metadata do
@@ -118,8 +162,8 @@ defmodule Cortex.Application do
     if Application.get_env(:cortex, :env) != :test do
       Task.start(fn ->
         # 等待 Repo 完全启动和迁移完成
-        # 增加等待时间，或者在生产环境中更谨慎
-        wait_time = if System.get_env("RELEASE_NAME"), do: 2000, else: 100
+        # 增加等待时间，确保迁移完成
+        wait_time = if should_prepare_database?(), do: 2000, else: 100
         Process.sleep(wait_time)
 
         Logger.info("[Application] Starting load_model_metadata...")
@@ -127,6 +171,10 @@ defmodule Cortex.Application do
         Cortex.Config.Metadata.load_seeds()
         # 加载到缓存
         Cortex.Config.Metadata.reload()
+        # 加载 ConfigExtension
+        Cortex.Extensions.Manager.load(Cortex.Extensions.ConfigExtension)
+        # 加载 SearchExtension
+        Cortex.Extensions.Manager.load(Cortex.Extensions.SearchExtension)
         Logger.info("[Application] load_model_metadata completed successfully.")
       end)
     end

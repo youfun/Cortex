@@ -1,0 +1,397 @@
+name: Release
+
+# GitHub Actions now default to read-only permissions for the GITHUB_TOKEN.
+# creating a release requires write access to repository contents, so we
+# explicitly grant it here. 403 errors during `action-gh-release` are usually
+# caused by missing permissions.
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [main, pre-release, dev]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build (for manual trigger on other branches)'
+        required: false
+        default: ''
+
+env:
+  MIX_ENV: prod
+  OTP_VERSION: "28.3.1"
+  OTP_SHORT: "28"
+  ELIXIR_VERSION: "1.19.5"
+  UBUNTU_VERSION: "22.04"
+  ZIG_VERSION: "0.15.2"
+
+jobs:
+  # 确定版本号和发布类型
+  prepare:
+    name: Prepare Release Info
+    runs-on: ubuntu-22.04
+    outputs:
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      should_publish: ${{ steps.version.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version and release type
+        id: version
+        run: |
+          # 从 mix.exs 读取版本号
+          APP_VERSION=$(grep -oP '(?<=version: ")[^"]+' mix.exs)
+          BRANCH="${{ github.ref_name }}"
+
+          echo "Branch: $BRANCH, Version: $APP_VERSION"
+
+          if [ "$BRANCH" = "main" ]; then
+            # main 分支 → 正式 release
+            echo "release_tag=v${APP_VERSION}" >> $GITHUB_OUTPUT
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+          elif [ "$BRANCH" = "pre-release" ]; then
+            # pre-release 分支 → pre-release 版本
+            echo "release_tag=v${APP_VERSION}-pre.${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+          else
+            # dev 或其他分支 → 只构建不发布
+            echo "release_tag=v${APP_VERSION}-${{ github.ref_name }}-${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-server:
+    name: Server Binary (Linux x86_64)
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Custom BEAM
+        run: |
+          chmod +x .github/scripts/setup-beam.sh
+          .github/scripts/setup-beam.sh
+
+      - name: Cache BEAM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/erlang_${{ env.OTP_SHORT }}
+            ~/elixir_otp${{ env.OTP_SHORT }}
+          key: beam-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}
+          restore-keys: |
+            beam-${{ runner.os }}-otp${{ env.OTP_VERSION }}-
+
+      - name: Verify BEAM versions
+        run: |
+          erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
+          elixir --version
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Burrito dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils jq
+          index="$(curl -fsSL https://ziglang.org/download/index.json)"
+          zig_url="$(printf '%s' "$index" | jq -r ".\"${ZIG_VERSION}\".\"x86_64-linux\".tarball")"
+          zig_pkg="$(basename "$zig_url")"
+          wget -q "$zig_url"
+          tar -xf "$zig_pkg"
+          sudo mv "${zig_pkg%.tar.xz}" /usr/local/zig
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
+
+      - name: Install Hex/Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Cache Mix Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-
+
+      - name: Fetch Deps
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Build Assets
+        run: |
+          mix assets.setup
+          mix assets.deploy
+
+      - name: Build Server Binary (Burrito)
+        run: mix release cortex --overwrite
+
+      - name: Upload Server Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-server-linux-x86_64
+          path: burrito_out/cortex_linux
+
+  build-desktop:
+    name: Desktop (${{ matrix.label }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x86_64
+            os: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+            burrito-target: linux
+            sidecar-triple: x86_64-unknown-linux-gnu
+            sidecar-ext: ""
+            burrito-bin: cortex_linux
+            use-custom-beam: true
+
+          - label: Windows x86_64
+            os: windows-2022
+            rust-target: x86_64-pc-windows-msvc
+            burrito-target: windows
+            sidecar-triple: x86_64-pc-windows-msvc
+            sidecar-ext: .exe
+            burrito-bin: cortex_windows.exe
+            use-custom-beam: false
+
+          - label: macOS aarch64
+            os: macos-14
+            rust-target: aarch64-apple-darwin
+            burrito-target: macos_m1
+            sidecar-triple: aarch64-apple-darwin
+            sidecar-ext: ""
+            burrito-bin: cortex_macos_m1
+            use-custom-beam: false
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Custom BEAM (Linux)
+        if: matrix.use-custom-beam
+        run: |
+          chmod +x .github/scripts/setup-beam.sh
+          .github/scripts/setup-beam.sh
+
+      - name: Cache BEAM (Linux)
+        if: matrix.use-custom-beam
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/erlang_${{ env.OTP_SHORT }}
+            ~/elixir_otp${{ env.OTP_SHORT }}
+          key: beam-${{ runner.os }}-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}
+
+      - name: Setup BEAM (Official)
+        if: ${{ !matrix.use-custom-beam }}
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+        env:
+          ImageOS: ${{ runner.os == 'Windows' && 'win22' || (runner.os == 'macOS' && 'macos14' || '') }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-directories: |
+            ~/.cargo/bin
+          key: ${{ matrix.rust-target }}
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xz-utils jq
+          index="$(curl -fsSL https://ziglang.org/download/index.json)"
+          zig_url="$(printf '%s' "$index" | jq -r ".\"${ZIG_VERSION}\".\"x86_64-linux\".tarball")"
+          zig_pkg="$(basename "$zig_url")"
+          wget -q "$zig_url"
+          tar -xf "$zig_pkg"
+          sudo mv "${zig_pkg%.tar.xz}" /usr/local/zig
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
+
+      - name: Install Hex/Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install Burrito dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $index = Invoke-WebRequest -Uri "https://ziglang.org/download/index.json" | Select-Object -ExpandProperty Content | ConvertFrom-Json
+          $zigUrl = $index.$env:ZIG_VERSION.'x86_64-windows'.tarball
+          $zigPkg = Split-Path $zigUrl -Leaf
+          Invoke-WebRequest -Uri $zigUrl -OutFile $zigPkg
+          Expand-Archive -Path $zigPkg -DestinationPath "C:\"
+          $zigDir = $zigPkg -replace '\.zip$',''
+          echo "C:\$zigDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install Burrito dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install xz jq
+          arch="$(uname -m)"
+          if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
+            zig_arch="aarch64-macos"
+          else
+            zig_arch="x86_64-macos"
+          fi
+          index="$(curl -fsSL https://ziglang.org/download/index.json)"
+          zig_url="$(printf '%s' "$index" | jq -r ".[\"${ZIG_VERSION}\"].\"${zig_arch}\".tarball")"
+          zig_pkg="$(basename "$zig_url")"
+          curl -fsSL "$zig_url" -o "${zig_pkg}"
+          tar -xf "${zig_pkg}"
+          sudo mv "${zig_pkg%.tar.xz}" /usr/local/zig
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
+
+      - name: Cache Mix Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+
+      - name: Fetch Deps
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Build Assets
+        run: |
+          mix assets.setup
+          mix assets.deploy
+
+      - name: Build Backend Sidecar (Burrito)
+        run: mix release cortex --overwrite
+
+      - name: Place sidecar binary for Tauri
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          cp "burrito_out/${{ matrix.burrito-bin }}" \
+             "src-tauri/binaries/cortex_backend-${{ matrix.sidecar-triple }}${{ matrix.sidecar-ext }}"
+
+      - name: Sync version to Tauri config
+        shell: bash
+        run: |
+          # Extract version from mix.exs
+          VERSION=$(grep 'version:' mix.exs | head -n1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Detected version: $VERSION"
+          
+          # Update tauri.conf.json (cross-platform)
+          sed "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
+          echo "✅ Updated tauri.conf.json to $VERSION"
+          
+          # Update Cargo.toml (cross-platform)
+          sed "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml > tmp.toml
+          mv tmp.toml src-tauri/Cargo.toml
+          echo "✅ Updated Cargo.toml to $VERSION"
+
+      - name: Install Tauri CLI
+        shell: bash
+        run: |
+          if ! command -v cargo-tauri &> /dev/null; then
+            cargo install tauri-cli --version "^2" --locked
+          else
+            echo "cargo-tauri already installed: $(cargo-tauri --version)"
+          fi
+
+      - name: Build Tauri Desktop App
+        working-directory: src-tauri
+        run: cargo tauri build --target ${{ matrix.rust-target }}
+
+      - name: Upload Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-desktop-${{ matrix.label }}
+          path: |
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [prepare, build-server, build-desktop]
+    runs-on: ubuntu-22.04
+    # 只有 main/dev 分支自动触发，或手动触发且 should_publish=true 时才发布
+    if: needs.prepare.outputs.should_publish == 'true'
+    steps:
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cortex-server-linux-x86_64
+          path: release-artifacts/server
+
+      - name: Download Linux desktop artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: 'cortex-desktop-Linux x86_64'
+          path: release-artifacts/linux
+
+      - name: Download Windows desktop artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: 'cortex-desktop-Windows x86_64'
+          path: release-artifacts/windows
+
+      - name: Download macOS desktop artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: 'cortex-desktop-macOS aarch64'
+          path: release-artifacts/macos
+
+      - name: Package release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          tar -czf release-assets/cortex-server-linux-x86_64.tar.gz -C release-artifacts/server .
+          tar -czf release-assets/cortex-desktop-linux-x86_64.tar.gz -C release-artifacts/linux .
+          tar -czf release-assets/cortex-desktop-windows-x86_64.tar.gz -C release-artifacts/windows .
+          tar -czf release-assets/cortex-desktop-macos-aarch64.tar.gz -C release-artifacts/macos .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          # provide the GITHUB_TOKEN explicitly, and ensure workflow permissions
+          # (see top of file) allow write access to contents. Without write
+          # permission the action returns HTTP 403 "Resource not accessible".
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: ${{ needs.prepare.outputs.is_prerelease == 'true' && format('Dev Build {0}', needs.prepare.outputs.release_tag) || format('Release {0}', needs.prepare.outputs.release_tag) }}
+          prerelease: ${{ needs.prepare.outputs.is_prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            release-assets/cortex-server-linux-x86_64.tar.gz
+            release-assets/cortex-desktop-linux-x86_64.tar.gz
+            release-assets/cortex-desktop-windows-x86_64.tar.gz
+            release-assets/cortex-desktop-macos-aarch64.tar.gz

@@ -63,6 +63,12 @@ defmodule CortexWeb.FileBrowserComponent do
     {:noreply, socket}
   end
 
+  def handle_event("open_in_editor", %{"path" => path}, socket) do
+    # Send message to parent LiveView to open file in editor
+    send(self(), {:open_file_in_editor, path})
+    {:noreply, socket}
+  end
+
   defp load_items(socket, path) do
     case File.ls(path) do
       {:ok, files} ->
@@ -129,9 +135,15 @@ defmodule CortexWeb.FileBrowserComponent do
                     <.icon name="hero-arrow-right-circle" class="w-4 h-4" />
                   </button>
                 <% else %>
-                  <div class="w-9">
-                    <%!-- Spacer for alignment --%>
-                  </div>
+                  <button
+                    phx-click="open_in_editor"
+                    phx-value-path={item.path}
+                    phx-target={@myself}
+                    class="p-2 text-slate-500 hover:text-teal-400 hover:bg-slate-800 rounded transition-colors"
+                    title="Open in editor"
+                  >
+                    <.icon name="hero-pencil-square" class="w-4 h-4" />
+                  </button>
                 <% end %>
 
                 <%!-- Selection Button --%>

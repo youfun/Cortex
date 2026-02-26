@@ -7,7 +7,8 @@ defmodule Cortex.BDD.Instructions.V1 do
     Cortex.BDD.Instructions.V1.Tool,
     Cortex.BDD.Instructions.V1.Memory,
     Cortex.BDD.Instructions.V1.Permission,
-    Cortex.BDD.Instructions.V1.Session
+    Cortex.BDD.Instructions.V1.Session,
+    Cortex.BDD.Instructions.V1.Config
   ]
 
   @type ctx :: map()

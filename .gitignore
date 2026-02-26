@@ -91,7 +91,7 @@ docs/bub-main/
 # BDD generated test files - regenerate locally with: .github/tools/bddc-linux-x86_64 compile
 test/bdd_generated/
 scripts/nano_banana.exs
-tape/
+/tape/
 
 # local files not tracked
 rename.exs

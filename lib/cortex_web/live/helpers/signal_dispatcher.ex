@@ -181,8 +181,32 @@ defmodule CortexWeb.SignalDispatcher do
 
   defp handle_file_changed(signal, socket) do
     payload = Helpers.signal_payload(signal)
-    push_event(socket, "file_changed", %{path: payload[:path] || payload["path"]})
+    path = payload[:path] || payload["path"]
+    
+    # Track file in conversation
+    socket = track_file(socket, path)
+    
+    # Notify editor component to refresh if file is open
+    send_update(CortexWeb.EditorComponent, 
+      id: "editor-component", 
+      action: :refresh_file, 
+      path: path
+    )
+    
+    push_event(socket, "file_changed", %{path: path})
   end
+
+  defp track_file(socket, path) when is_binary(path) do
+    files = socket.assigns[:conversation_files] || []
+    
+    if path not in files do
+      Phoenix.Component.assign(socket, conversation_files: [path | files])
+    else
+      socket
+    end
+  end
+
+  defp track_file(socket, _), do: socket
 
   defp handle_skill_loaded(signal, socket) do
     payload = Helpers.signal_payload(signal)

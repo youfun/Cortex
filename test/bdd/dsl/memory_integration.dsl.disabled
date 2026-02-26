@@ -2,14 +2,14 @@
   GIVEN signal_bus_is_clean
   GIVEN start_agent
   # Simulate user chat request which should trigger MemoryHook.on_input -> WorkingMemory.set_focus
-  WHEN signal_is_emitted type="agent.chat.request" data='{"content": "帮我用 Phoenix 写一个 REST API"}' session_id="mem_test"
+  WHEN signal_is_emitted type="agent.chat.request" data='{"content":"Help me write a REST API with Phoenix"}' session_id="mem_test"
   # WorkingMemory should now have a focus set
   THEN assert_working_memory_has_focus contains="Phoenix"
 
 [SCENARIO: MEMORY-FLOW-002] TITLE: Subconscious extracts coding context from user input TAGS: memory subconscious coding
   GIVEN signal_bus_is_clean
   # Analyze content with coding-specific patterns
-  WHEN subconscious_analyze content="我们项目用Elixir框架，代码风格遵循 Credo strict"
+  WHEN subconscious_analyze content="Our project uses Elixir framework with Credo strict style"
   THEN assert_proposals_created min_count=1
   THEN assert_proposal_content contains="Elixir"
 

@@ -38,10 +38,14 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
         Enum.find(assigns.all_agents, &(&1.id == assigns.selected_agent_id))
       )
 
+    assigns = assign_new(assigns, :chat_subtab, fn -> "messages" end)
+    assigns = assign_new(assigns, :conversation_files, fn -> [] end)
+
     ~H"""
-    <div class="flex-1 flex flex-col h-full relative">
-      <!-- Selectors Area -->
-      <div class="absolute top-4 right-4 z-20 flex items-start space-x-2">
+    <div class="flex-1 flex flex-col h-full">
+      <!-- Selectors Area (fixed at top right) -->
+      <div class="relative">
+        <div class="absolute top-4 right-4 z-20 flex items-start space-x-2">
           <!-- Add Folder Button -->
           <button
             phx-click="open_add_folder_modal"
@@ -130,9 +134,46 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
             </div>
           </div>
         </div>
+      </div>
+
+    <!-- Chat Subtabs (Messages / Files) -->
+        <div class="border-b border-slate-800 bg-slate-900/30 px-6 flex space-x-1">
+          <button
+            phx-click="set_chat_subtab"
+            phx-value-tab="messages"
+            class={[
+              "px-4 py-2 text-sm font-medium transition-colors border-b-2",
+              if(@chat_subtab == "messages", 
+                do: "text-teal-400 border-teal-400", 
+                else: "text-slate-400 border-transparent hover:text-slate-300")
+            ]}
+          >
+            <.icon name="hero-chat-bubble-left-right" class="w-4 h-4 inline mr-1" />
+            Messages
+          </button>
+          <button
+            phx-click="set_chat_subtab"
+            phx-value-tab="files"
+            class={[
+              "px-4 py-2 text-sm font-medium transition-colors border-b-2",
+              if(@chat_subtab == "files", 
+                do: "text-teal-400 border-teal-400", 
+                else: "text-slate-400 border-transparent hover:text-slate-300")
+            ]}
+          >
+            <.icon name="hero-document-text" class="w-4 h-4 inline mr-1" />
+            Files
+            <%= if length(@conversation_files) > 0 do %>
+              <span class="ml-1 px-1.5 py-0.5 bg-teal-500/20 text-teal-300 text-xs rounded-full">
+                {length(@conversation_files)}
+              </span>
+            <% end %>
+          </button>
+        </div>
 
     <!-- Messages Area -->
         <div
+          :if={@chat_subtab == "messages"}
           id="messages-container"
           phx-hook="ScrollToBottom"
           class="flex-1 overflow-y-auto p-6 space-y-6"
@@ -200,6 +241,45 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
               </div>
             </div>
           </div>
+        </div>
+
+    <!-- Files Area -->
+        <div
+          :if={@chat_subtab == "files"}
+          class="flex-1 overflow-y-auto p-6"
+        >
+          <%= if Enum.empty?(@conversation_files) do %>
+            <div class="flex flex-col items-center justify-center h-full text-slate-500">
+              <.icon name="hero-document-text" class="w-16 h-16 opacity-20 mb-4" />
+              <p class="text-sm">No files in this conversation yet</p>
+              <p class="text-xs mt-2 opacity-70">Files will appear here when Agent reads or modifies them</p>
+            </div>
+          <% else %>
+            <div class="space-y-2 max-h-[60vh] overflow-y-auto">
+              <h3 class="text-sm font-semibold text-slate-400 mb-3 sticky top-0 bg-slate-950 py-2">
+                Files in this conversation ({length(@conversation_files)})
+              </h3>
+              <%= for file <- @conversation_files do %>
+                <div class="flex items-center justify-between p-3 bg-slate-900/50 border border-slate-800 rounded-lg hover:bg-slate-800/50 transition-colors group">
+                  <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <.icon name="hero-document" class="w-5 h-5 text-slate-400 flex-shrink-0" />
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm text-slate-200 truncate font-mono">{Path.basename(file)}</p>
+                      <p class="text-xs text-slate-500 truncate">{Path.relative_to_cwd(file)}</p>
+                    </div>
+                  </div>
+                  <button
+                    phx-click="open_file_in_editor"
+                    phx-value-path={file}
+                    class="px-3 py-1.5 bg-teal-600/10 hover:bg-teal-600 text-teal-400 hover:text-white border border-teal-600/30 rounded-lg text-xs transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <.icon name="hero-pencil-square" class="w-4 h-4 inline mr-1" />
+                    Edit
+                  </button>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
         </div>
 
     <!-- Authorized Folders Bar -->
@@ -346,6 +426,8 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
   end
 
   def tool_result_message(assigns) do
+    assigns = assign(assigns, :file_path, extract_file_path(assigns.message))
+    
     ~H"""
     <div class="max-w-[90%] rounded-xl px-4 py-2 bg-slate-900/50 border border-slate-700/30 text-teal-300">
       <div class="flex items-center gap-2 mb-1 whitespace-nowrap">
@@ -356,6 +438,19 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
       <div class="text-xs font-mono whitespace-pre-wrap overflow-x-auto max-h-48">
         {(@message.content || %{})["content"]}
       </div>
+      
+      <%= if @file_path do %>
+        <div class="mt-2 pt-2 border-t border-slate-700/30">
+          <button 
+            phx-click="open_file_in_editor" 
+            phx-value-path={@file_path}
+            class="inline-flex items-center gap-1 px-2 py-1 text-xs text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 rounded transition-colors"
+          >
+            <.icon name="hero-pencil-square" class="w-3 h-3" />
+            <span>Open in Editor</span>
+          </button>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -401,4 +496,40 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
   defp status_label("completed"), do: "✓ Completed"
   defp status_label("failed"), do: "✗ Failed"
   defp status_label(_), do: ""
+
+  defp extract_file_path(message) do
+    content = message.content || %{}
+    tool_name = content["name"]
+    
+    # 检查是否是文件操作工具
+    if tool_name in ["write_file", "edit_file", "read_file", "read_structure"] do
+      # 尝试从不同位置提取路径
+      cond do
+        # 从 args 中提取
+        is_map(content["args"]) && content["args"]["path"] ->
+          content["args"]["path"]
+        
+        # 从 result 中提取
+        is_map(content["result"]) && content["result"]["path"] ->
+          content["result"]["path"]
+        
+        # 从 content 字符串中解析（如果是 JSON 字符串）
+        is_binary(content["content"]) ->
+          extract_path_from_content(content["content"])
+        
+        true ->
+          nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp extract_path_from_content(content_str) do
+    # 尝试从内容中提取路径（简单正则匹配）
+    case Regex.run(~r/(?:path|file)["']?\s*[:=]\s*["']?([^\s"',}]+)/, content_str) do
+      [_, path] -> path
+      _ -> nil
+    end
+  end
 end

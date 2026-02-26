@@ -150,8 +150,7 @@ Cortex is built on the Jido framework and draws from multiple reference architec
 - **Jido** — Core Elixir agent framework with signal-driven architecture
 - **Gong** — Elixir agent engine with ReAct loops and hook system
 - **OpenClaw China** — China IM platform integration patterns
-- **Pi Mono** — TypeScript agent toolkit with modular design
-- **Cli** — Command-line tools and compilers
+- **Pi Mono** — OpenClaw core package
 - **Arbor** — Memory system with vector search and knowledge graphs
 
 ## License

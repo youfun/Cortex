@@ -871,5 +871,205 @@
     outputs: %{},
     boundary: :tool,
     scopes: [:integration]
+  },
+  # folder_authorization
+  check_folder_access: %{
+    name: :check_folder_access,
+    kind: :when,
+    args: %{
+      agent_id: %{type: :string, required?: true, allowed: nil},
+      path: %{type: :string, required?: true, allowed: nil},
+      project_root: %{type: :string, required?: false, allowed: nil},
+      mode: %{type: :string, required?: false, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:integration]
+  },
+  add_authorized_folder: %{
+    name: :add_authorized_folder,
+    kind: :given,
+    args: %{
+      agent_id: %{type: :string, required?: true, allowed: nil},
+      folder: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:integration]
+  },
+  remove_authorized_folder: %{
+    name: :remove_authorized_folder,
+    kind: :when,
+    args: %{
+      agent_id: %{type: :string, required?: true, allowed: nil},
+      folder: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:integration]
+  },
+  assert_folder_access: %{
+    name: :assert_folder_access,
+    kind: :then,
+    args: %{
+      result: %{type: :string, required?: true, allowed: ["ok", "denied"]}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:integration],
+    assert_class: :C
+  },
+  # tool interceptor
+  tool_interceptor_initialized: %{
+    name: :tool_interceptor_initialized,
+    kind: :given,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  tool_pre_approved: %{
+    name: :tool_pre_approved,
+    kind: :given,
+    args: %{
+      tool_name: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  check_tool_approval: %{
+    name: :check_tool_approval,
+    kind: :when,
+    args: %{
+      tool_name: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  approval_required: %{
+    name: :approval_required,
+    kind: :then,
+    args: %{
+      reason: %{type: :string, required?: false, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration],
+    assert_class: :C
+  },
+  approval_not_required: %{
+    name: :approval_not_required,
+    kind: :then,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration],
+    assert_class: :C
+  },
+  # search settings
+  search_settings_clean: %{
+    name: :search_settings_clean,
+    kind: :given,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  get_search_settings: %{
+    name: :get_search_settings,
+    kind: :when,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  update_search_provider: %{
+    name: :update_search_provider,
+    kind: :when,
+    args: %{
+      provider: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  search_provider_is: %{
+    name: :search_provider_is,
+    kind: :then,
+    args: %{
+      provider: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration],
+    assert_class: :C
+  },
+  validation_error: %{
+    name: :validation_error,
+    kind: :then,
+    args: %{
+      field: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration],
+    assert_class: :C
+  },
+  # title generation
+  title_settings_clean: %{
+    name: :title_settings_clean,
+    kind: :given,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  get_title_mode: %{
+    name: :get_title_mode,
+    kind: :when,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  set_title_mode: %{
+    name: :set_title_mode,
+    kind: :when,
+    args: %{
+      mode: %{type: :string, required?: true, allowed: ["disabled", "conversation", "model"]}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  trigger_title_generation: %{
+    name: :trigger_title_generation,
+    kind: :when,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration]
+  },
+  title_mode_is: %{
+    name: :title_mode_is,
+    kind: :then,
+    args: %{
+      mode: %{type: :string, required?: true, allowed: nil}
+    },
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration],
+    assert_class: :C
+  },
+  title_generation_skipped: %{
+    name: :title_generation_skipped,
+    kind: :then,
+    args: %{},
+    outputs: %{},
+    boundary: :test_runtime,
+    scopes: [:unit, :integration],
+    assert_class: :C
   }
 }

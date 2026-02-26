@@ -12,7 +12,14 @@ defmodule CortexWeb.JidoLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {workspace, conversations, current_conversation} = init_workspace_conversation()
+    utc_offset_minutes =
+      if connected?(socket) do
+        get_connect_params(socket)["utc_offset_minutes"] || 0
+      else
+        0
+      end
+
+    {workspace, conversations, current_conversation} = init_workspace_conversation(utc_offset_minutes)
     session_id = Coordinator.session_id(current_conversation.id)
     available_models = AgentLiveHelpers.list_available_models()
 
@@ -33,8 +40,11 @@ defmodule CortexWeb.JidoLive do
     socket =
       assign(socket,
         active_tab: :chat,
-        active_panel: "chat",
+        show_editor_sidebar: false,
+        chat_subtab: "messages",
+        conversation_files: AgentLiveHelpers.restore_conversation_files(current_conversation),
         workspace: workspace,
+        utc_offset_minutes: utc_offset_minutes,
         archived_count: Conversations.count_archived(workspace.id),
         show_model_selector: false,
         show_agent_selector: false,
@@ -69,22 +79,22 @@ defmodule CortexWeb.JidoLive do
     {:ok, socket}
   end
 
-  defp init_workspace_conversation do
+  defp init_workspace_conversation(utc_offset_minutes) do
     workspace = Workspaces.ensure_default_workspace()
     conversations = Conversations.list_conversations(workspace.id)
-    current_conversation = ensure_current_conversation(conversations, workspace.id)
+    current_conversation = ensure_current_conversation(conversations, workspace.id, utc_offset_minutes)
     {workspace, conversations, current_conversation}
   end
 
-  defp ensure_current_conversation([first | _], _workspace_id) do
+  defp ensure_current_conversation([first | _], _workspace_id, _utc_offset_minutes) do
     {:ok, touched} = Conversations.touch_conversation(first)
     touched
   end
 
-  defp ensure_current_conversation([], workspace_id) do
+  defp ensure_current_conversation([], workspace_id, utc_offset_minutes) do
     {:ok, conversation} =
       Conversations.create_conversation(
-        %{title: AgentLiveHelpers.new_conversation_title()},
+        %{title: AgentLiveHelpers.new_conversation_title(utc_offset_minutes)},
         workspace_id
       )
 
@@ -101,10 +111,6 @@ defmodule CortexWeb.JidoLive do
   # ============================================================================
 
   @impl true
-  def handle_event("setActivePanel", %{"panel" => panel}, socket) do
-    {:noreply, assign(socket, active_panel: panel)}
-  end
-
   def handle_event("toggle_model_selector", _params, socket) do
     {:noreply, assign(socket, show_model_selector: !socket.assigns.show_model_selector)}
   end
@@ -256,6 +262,23 @@ defmodule CortexWeb.JidoLive do
     {:noreply, socket}
   end
 
+  def handle_event("open_file_in_editor", %{"path" => path}, socket) do
+    send_update(CortexWeb.EditorComponent, id: "editor-component", action: :open_file, path: path)
+    {:noreply, assign(socket, show_editor_sidebar: true)}
+  end
+
+  def handle_event("close_editor_sidebar", _, socket) do
+    {:noreply, assign(socket, show_editor_sidebar: false)}
+  end
+
+  def handle_event("set_chat_subtab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, chat_subtab: tab)}
+  end
+
+  def handle_event("prevent_close", _, socket) do
+    {:noreply, socket}
+  end
+
   # ============================================================================
   # Info Handlers (Internal & PubSub Signals)
   # ============================================================================
@@ -333,6 +356,61 @@ defmodule CortexWeb.JidoLive do
 
   def handle_info({:coordinator_delayed_stop, _conversation_id}, socket) do
     {:noreply, socket}
+  end
+
+  def handle_info({:file_saved_from_editor, path, content}, socket) do
+    # Emit signal for file change
+    Cortex.SignalHub.emit(
+      "file.changed.write",
+      %{
+        provider: "ui",
+        event: "file",
+        action: "changed_write",
+        actor: "user",
+        origin: %{channel: "ui", client: "editor", platform: "browser"},
+        path: path,
+        content: content
+      },
+      source: "/ui/editor/save"
+    )
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:inject_context, context_data}, socket) do
+    socket = case context_data.type do
+      :snippet ->
+        relative = Path.relative_to_cwd(context_data.path)
+        range = context_data.line_range
+        range_str = " (lines #{range.start}-#{range.end})"
+        
+        context_msg = %{
+          role: "user",
+          content: "[Context: #{relative}#{range_str}]\n```\n#{context_data.content}\n```"
+        }
+        
+        AgentLiveHelpers.emit_context_add(socket, context_msg, "/ui/editor/context")
+
+      :full_file ->
+        relative = Path.relative_to_cwd(context_data.path)
+        
+        context_msg = %{
+          role: "user",
+          content: "[Context: #{relative}]\n```\n#{context_data.content}\n```"
+        }
+        
+        AgentLiveHelpers.emit_context_add(socket, context_msg, "/ui/editor/context")
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:open_file_in_editor, path}, socket) do
+    send_update(CortexWeb.EditorComponent, id: "editor-component", action: :open_file, path: path)
+    
+    socket = AgentLiveHelpers.track_and_persist_file(socket, path)
+    
+    {:noreply, assign(socket, show_editor_sidebar: true)}
   end
 
   def handle_info({:user_message, content}, socket) do
@@ -430,22 +508,11 @@ defmodule CortexWeb.JidoLive do
       </header>
 
       <main class="flex-1 overflow-hidden flex flex-col">
-        <div class="bg-slate-900/30 border-b border-slate-800 px-6 py-2 flex space-x-4">
-          <button
-            phx-click="setActivePanel"
-            phx-value-panel="chat"
-            class="px-3 py-1 rounded-md bg-teal-600"
-          >
-            {gettext("Messages")}
-          </button>
-          <button phx-click="setActivePanel" phx-value-panel="tasks" class="px-3 py-1 rounded-md">
-            {gettext("Tasks")}
-          </button>
-        </div>
-
         <div class="flex-1 overflow-hidden flex">
-          <%= if @active_panel == "chat" do %>
-            <div class="flex-1 flex overflow-hidden">
+          <div class={[
+            "flex overflow-hidden transition-all duration-300",
+            if(@show_editor_sidebar, do: "flex-1", else: "flex-1")
+          ]}>
               <.chat_panel
                 streams={@streams}
                 models={@models}
@@ -469,7 +536,10 @@ defmodule CortexWeb.JidoLive do
                 pending_tool_calls_count={@pending_tool_calls_count}
                 show_archived_modal={@show_archived_modal}
                 archived_conversations={@archived_conversations}
+                chat_subtab={@chat_subtab}
+                conversation_files={@conversation_files}
               />
+              
               <.permission_modal
                 :if={@show_permission_modal}
                 request={@pending_permission_request}
@@ -482,6 +552,29 @@ defmodule CortexWeb.JidoLive do
                 :if={@show_archived_modal}
                 archived_conversations={@archived_conversations}
               />
+            </div>
+
+            <%!-- Editor Sidebar --%>
+            <%= if @show_editor_sidebar do %>
+              <div class="w-[50vw] border-l border-slate-800 bg-slate-950 flex flex-col">
+                <div class="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900/50">
+                  <h3 class="text-sm font-semibold text-slate-300">Editor</h3>
+                  <button 
+                    phx-click="close_editor_sidebar" 
+                    class="text-slate-400 hover:text-white transition-colors"
+                    title="Close editor"
+                  >
+                    <.icon name="hero-x-mark" class="w-5 h-5" />
+                  </button>
+                </div>
+                <div class="flex-1 overflow-hidden">
+                  <.live_component
+                    module={CortexWeb.EditorComponent}
+                    id="editor-component"
+                  />
+                </div>
+              </div>
+            <% end %>
 
               <%!-- <aside class="w-96 bg-slate-950 border-l border-slate-800 flex flex-col p-4 space-y-4 overflow-hidden hidden lg:flex">
                 <div class="flex-1 min-h-0">
@@ -500,20 +593,6 @@ defmodule CortexWeb.JidoLive do
                   />
                 </div>
               </aside> --%>
-            </div>
-          <% end %>
-
-          <%= if @active_panel == "tasks" do %>
-            <div class="flex-1 p-6">
-              <h2 class="text-xl font-bold mb-4">{gettext("Execution Status")}</h2>
-              <%= for task <- @plan_todo_entries do %>
-                <div class="p-3 border-b border-slate-800 flex justify-between">
-                  <span>{task.content}</span>
-                  <span class="text-teal-400">{task.status}</span>
-                </div>
-              <% end %>
-            </div>
-          <% end %>
         </div>
       </main>
     </div>
