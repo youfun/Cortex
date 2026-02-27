@@ -95,12 +95,23 @@ defmodule Cortex.Channels.ConfigLoader do
   Only returns config if the channel is enabled.
   """
   def load_from_db(adapter) do
-    case Channels.get_channel_config_by_adapter(adapter) do
+    Channels.get_channel_config_by_adapter(adapter)
+    |> case do
       %{enabled: true, config: config} when is_map(config) ->
         config
 
       _ ->
         %{}
     end
+  rescue
+    # 表不存在时（迁移未完成或首次启动）优雅降级
+    e in [Exqlite.Error, Ecto.QueryError] ->
+      require Logger
+
+      Logger.warning(
+        "[ConfigLoader] DB query failed (table may not exist yet): #{Exception.message(e)}"
+      )
+
+      %{}
   end
 end

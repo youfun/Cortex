@@ -96,10 +96,11 @@ defmodule Cortex.Application do
   # 2. MIX_ENV=prod（生产环境）
   # 3. 使用了 Code.ensure_loaded?/1 检测到是打包后的环境
   defp should_prepare_database? do
-    System.get_env("RELEASE_NAME") != nil or
-      Application.get_env(:cortex, :env) == :prod or
-      Mix.env() == :prod or
-      not Code.ensure_loaded?(Mix)
+    # 不要调用 Mix.env()，Burrito 打包后 Mix 模块不存在会崩溃
+    # Code.ensure_loaded?(Mix) == false 说明是打包后的二进制环境
+    not Code.ensure_loaded?(Mix) or
+      System.get_env("RELEASE_NAME") != nil or
+      Application.get_env(:cortex, :env) == :prod
   end
 
   defp prepare_database do
@@ -110,9 +111,11 @@ defmodule Cortex.Application do
       ensure_database_directory(repo)
 
       case repo.start_link(pool_size: 2) do
-        {:ok, _} ->
+        {:ok, pid} ->
           run_migrations(repo)
-          repo.stop()
+          # 先用 GenServer.stop 确保进程完全终止，再等待 SQLite 释放文件锁
+          GenServer.stop(pid, :normal, 5_000)
+          Process.sleep(200)
 
         {:error, {:already_started, _}} ->
           run_migrations(repo)
