@@ -197,7 +197,7 @@ async fn start_backend(
     if let Ok(mut child_guard) = backend_child.lock() {
         *child_guard = Some(child);
     }
-    println!(\"Backend process started, waiting for it to be ready...\");
+    println!("Backend process started, waiting for it to be ready...");
     // Poll to check backend readiness
     let mut attempts = 0;
     let max_attempts = 60;
