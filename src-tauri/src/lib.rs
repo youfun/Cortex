@@ -39,13 +39,18 @@ pub fn run() {
                 .set_focus();
         }))
         .setup(move |app| {
+            log_to_file(&log_file, "Entered setup function");
+            
             // Get an available port
             let port = get_free_port();
+            log_to_file(&log_file, &format!("Selected dynamic port: {}", port));
             println!("Selected dynamic port: {}", port);
             // System Tray Setup
+            log_to_file(&log_file, "Setting up system tray...");
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+            log_to_file(&log_file, "System tray menu created");
             let backend_child_for_tray = backend_child.clone();
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -126,8 +131,11 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+            log_to_file(&log_file, "System tray built successfully");
+            
             let handle = app.handle().clone();
             let log_file_for_backend = log_file.clone();
+            log_to_file(&log_file, "About to spawn backend initialization task...");
             // Async start Phoenix backend
             tauri::async_runtime::spawn(async move {
                 log_to_file(&log_file_for_backend, "Starting backend initialization...");
@@ -142,6 +150,8 @@ pub fn run() {
                     }
                 }
             });
+            log_to_file(&log_file, "Backend initialization task spawned");
+            log_to_file(&log_file, "Setup function completed successfully");
             Ok(())
         })
         .on_window_event(|window, event| {
