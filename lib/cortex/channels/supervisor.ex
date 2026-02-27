@@ -45,5 +45,12 @@ defmodule Cortex.Channels.Supervisor do
       true ->
         []
     end
+  rescue
+    e ->
+      Logger.error(
+        "[Channels.Supervisor] Failed to load adapter #{inspect(adapter)}: #{Exception.message(e)}"
+      )
+
+      []
   end
 end

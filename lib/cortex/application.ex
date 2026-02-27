@@ -170,15 +170,23 @@ defmodule Cortex.Application do
         Process.sleep(wait_time)
 
         Logger.info("[Application] Starting load_model_metadata...")
-        # 加载种子数据
-        Cortex.Config.Metadata.load_seeds()
-        # 加载到缓存
-        Cortex.Config.Metadata.reload()
-        # 加载 ConfigExtension
-        Cortex.Extensions.Manager.load(Cortex.Extensions.ConfigExtension)
-        # 加载 SearchExtension
-        Cortex.Extensions.Manager.load(Cortex.Extensions.SearchExtension)
-        Logger.info("[Application] load_model_metadata completed successfully.")
+
+        try do
+          # 加载种子数据
+          Cortex.Config.Metadata.load_seeds()
+          # 加载到缓存
+          Cortex.Config.Metadata.reload()
+          # 加载 ConfigExtension
+          Cortex.Extensions.Manager.load(Cortex.Extensions.ConfigExtension)
+          # 加载 SearchExtension
+          Cortex.Extensions.Manager.load(Cortex.Extensions.SearchExtension)
+          Logger.info("[Application] load_model_metadata completed successfully.")
+        rescue
+          e in [Exqlite.Error, Ecto.QueryError, DBConnection.ConnectionError] ->
+            Logger.warning(
+              "[Application] load_model_metadata failed (DB may not be ready): #{Exception.message(e)}"
+            )
+        end
       end)
     end
   end

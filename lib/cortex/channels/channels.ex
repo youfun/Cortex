@@ -24,6 +24,15 @@ defmodule Cortex.Channels do
   """
   def get_channel_config_by_adapter(adapter) do
     Repo.one(from c in ChannelConfig, where: c.adapter == ^adapter, limit: 1)
+  rescue
+    e in [Exqlite.Error, Ecto.QueryError] ->
+      require Logger
+
+      Logger.warning(
+        "[Channels] DB query failed for adapter #{adapter}: #{Exception.message(e)}"
+      )
+
+      nil
   end
 
   @doc """
