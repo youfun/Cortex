@@ -2,6 +2,10 @@ defmodule CortexWeb.SystemController do
   use CortexWeb, :controller
   require Logger
 
+  def health(conn, _params) do
+    json(conn, %{status: "ok", timestamp: DateTime.utc_now()})
+  end
+
   def shutdown(conn, _params) do
     # Only allow shutdown from localhost
     if local_request?(conn) do

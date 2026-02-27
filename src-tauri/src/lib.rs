@@ -197,17 +197,18 @@ async fn start_backend(
     if let Ok(mut child_guard) = backend_child.lock() {
         *child_guard = Some(child);
     }
-    println!("Backend process started, waiting for it to be ready...");
+    println!(\"Backend process started, waiting for it to be ready...\");
     // Poll to check backend readiness
     let mut attempts = 0;
     let max_attempts = 60;
     let base_url = format!("http://localhost:{}", port);
+    let health_url = format!("{}/api/system/health", base_url);
     loop {
         attempts += 1;
         if attempts > max_attempts {
             return Err(format!("Backend failed to start after {} attempts", max_attempts).into());
         }
-        match reqwest::get(&base_url).await {
+        match reqwest::get(&health_url).await {
             Ok(response) if response.status().is_success() => {
                 println!("Backend is ready after {} attempts!", attempts);
                 break;

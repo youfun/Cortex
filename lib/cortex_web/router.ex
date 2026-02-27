@@ -40,6 +40,7 @@ defmodule CortexWeb.Router do
   # System API
   scope "/api/system", CortexWeb do
     pipe_through :api
+    get "/health", SystemController, :health
     post "/shutdown", SystemController, :shutdown
   end
 
