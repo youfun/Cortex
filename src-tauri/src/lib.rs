@@ -181,7 +181,7 @@ fn log_to_file(log_file: &std::sync::Arc<Mutex<PathBuf>>, message: &str) {
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(path.as_ref())
+            .open(path.as_path())
         {
             let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
             let _ = writeln!(file, "[{}] {}", timestamp, message);
