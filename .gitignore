@@ -97,3 +97,4 @@ scripts/nano_banana.exs
 rename.exs
 output.txt
 history.jsonl
+deps-local/ex_tauri
