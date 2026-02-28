@@ -193,7 +193,7 @@ fn get_free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
         .map(|a| a.port())
-        .unwrap_or(4000)
+        .unwrap_or(5678)
 }
 
 async fn start_backend(

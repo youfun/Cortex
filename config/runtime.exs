@@ -104,7 +104,7 @@ if config_env() == :prod do
       "fixme_secret_key_base_at_least_64_chars_long_for_desktop_app"
 
   host = System.get_env("PHX_HOST") || "localhost"
-  port = String.to_integer(System.get_env("PORT") || "4000")
+  port = String.to_integer(System.get_env("PORT") || "5678")
 
   config :cortex, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
