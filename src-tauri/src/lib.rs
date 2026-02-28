@@ -271,30 +271,40 @@ async fn start_backend(
 fn start_heartbeat(log_file: &std::sync::Arc<Mutex<PathBuf>>) {
     log_to_file(log_file, "Starting heartbeat to Phoenix sidecar...");
 
-    std::thread::spawn(|| {
-        use std::os::unix::net::UnixStream;
+    #[cfg(unix)]
+    {
+        std::thread::spawn(|| {
+            use std::os::unix::net::UnixStream;
 
-        let socket_path = "/tmp/tauri_heartbeat_cortex.sock";
-        let interval = Duration::from_millis(100);
+            let socket_path = "/tmp/tauri_heartbeat_cortex.sock";
+            let interval = Duration::from_millis(100);
 
-        // Wait for socket to be ready
-        let mut stream = loop {
-            match UnixStream::connect(socket_path) {
-                Ok(s) => break s,
-                Err(_) => std::thread::sleep(Duration::from_millis(100)),
+            // Wait for socket to be ready
+            let mut stream = loop {
+                match UnixStream::connect(socket_path) {
+                    Ok(s) => break s,
+                    Err(_) => std::thread::sleep(Duration::from_millis(100)),
+                }
+            };
+
+            println!("Connected to heartbeat socket");
+
+            loop {
+                match stream.write_all(b"h") {
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+                std::thread::sleep(interval);
             }
-        };
+        });
+    }
 
-        println!("Connected to heartbeat socket");
-
-        loop {
-            match stream.write_all(b"h") {
-                Ok(_) => {}
-                Err(_) => break,
-            }
-            std::thread::sleep(interval);
-        }
-    });
+    #[cfg(windows)]
+    {
+        // Windows doesn't support Unix domain sockets in the same way
+        // Use TCP-based heartbeat or disable for now
+        log_to_file(log_file, "Heartbeat not implemented for Windows yet");
+    }
 }
 
 async fn check_server_started(port: u16, log_file: &std::sync::Arc<Mutex<PathBuf>>) {
