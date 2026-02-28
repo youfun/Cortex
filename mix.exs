@@ -79,7 +79,7 @@ defmodule Cortex.MixProject do
       {:burrito, "~> 1.0"},
       {:nimble_parsec, "~> 1.0"},
       {:req_llm, github: "youfun/req_llm", branch: "feat/implicit-model-fallback", override: true},
-      {:ex_tauri, path: "deps-local/ex_tauri"}
+    {:ex_tauri, git: "https://github.com/filipecabaco/ex_tauri.git"}
     ]
   end
 
