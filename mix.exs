@@ -4,7 +4,7 @@ defmodule Cortex.MixProject do
   def project do
     [
       app: :cortex,
-      version: "0.1.39",
+      version: "0.1.40",
       elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
