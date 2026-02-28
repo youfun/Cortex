@@ -51,19 +51,31 @@ defmodule CortexWeb.Router do
   end
 
   def check_auth(conn, _opts) do
-    if System.get_env("DESKTOP_MODE") == "true" do
-      conn
-    else
-      with {user, pass} <- Plug.BasicAuth.parse_basic_auth(conn),
-           true <- user == System.get_env("AUTH_USER", "admin"),
-           true <- pass == System.get_env("AUTH_PASS", "admin") do
+    # 跳过认证的条件:
+    # 1. 开发环境 (MIX_ENV=dev)
+    # 2. GUI 桌面模式 (DESKTOP_MODE=true)
+    # 只有在生产环境的 server 部署时才需要认证
+    cond do
+      Mix.env() == :dev ->
+        # 开发环境直接放行
         conn
-      else
-        _ ->
+
+      System.get_env("DESKTOP_MODE") == "true" ->
+        # GUI 桌面版本直接放行
+        conn
+
+      true ->
+        # 生产环境 server 部署需要认证
+        with {user, pass} <- Plug.BasicAuth.parse_basic_auth(conn),
+             true <- user == System.get_env("AUTH_USER", "admin"),
+             true <- pass == System.get_env("AUTH_PASS", "admin") do
           conn
-          |> Plug.BasicAuth.request_basic_auth()
-          |> halt()
-      end
+        else
+          _ ->
+            conn
+            |> Plug.BasicAuth.request_basic_auth()
+            |> halt()
+        end
     end
   end
 

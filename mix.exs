@@ -78,17 +78,33 @@ defmodule Cortex.MixProject do
 
       {:burrito, "~> 1.0"},
       {:nimble_parsec, "~> 1.0"},
-      {:req_llm, github: "youfun/req_llm", branch: "feat/implicit-model-fallback", override: true}
+      {:req_llm, github: "youfun/req_llm", branch: "feat/implicit-model-fallback", override: true},
+      {:ex_tauri, path: "deps-local/ex_tauri"}
     ]
   end
 
   def releases do
     [
+      # Server 版本：纯 Elixir 后端（无 Tauri GUI）
       cortex: [
         steps: [:assemble, &Burrito.wrap/1],
         env: %{
           "RELEASE_NAME" => "cortex"
-          # "CORTEX_DESKTOP" => "true"
+        },
+        burrito: [
+          targets: [
+            linux: [os: :linux, cpu: :x86_64]
+          ],
+          debug: Mix.env() != :prod,
+          debug_interpreter: Mix.env() != :prod
+        ]
+      ],
+
+      # Desktop 版本：ExTauri 集成（Tauri sidecar）
+      desktop: [
+        steps: [:assemble, &Burrito.wrap/1],
+        env: %{
+          "RELEASE_NAME" => "desktop"
         },
         burrito: [
           targets: [

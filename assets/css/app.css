@@ -1,13 +1,22 @@
+/* Typography - Geist Font System (必须在最前面) */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+
 @import "tailwindcss" source("../..");
 
 @plugin "../vendor/heroicons.js";
+
+/* Design Tokens */
+@import "./design-tokens.css";
+
+/* Animation System */
+@import "./animations.css";
 
 /* Cortex Styles */
 @layer base {
   :root {
     --background: 220 16% 6%;
     --foreground: 210 40% 98%;
-    --primary: 172 66% 40%;
+    --primary: 172 50% 40%;
     --primary-foreground: 210 40% 98%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -17,8 +26,30 @@
     --accent-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 172 66% 40%;
+    --ring: 172 50% 40%;
     --radius: 0.75rem;
+    
+    /* 字体家族 */
+    --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Geist Mono', 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  
+  /* 应用字体到全局 */
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+    font-feature-settings: 'liga' 0, 'calt' 0;
+  }
+  
+  /* 标题系统 */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: -0.025em;
   }
 }
 

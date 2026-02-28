@@ -181,6 +181,7 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
           <div
             id="messages"
             phx-update="stream"
+            phx-hook="MessageFadeIn"
             class="space-y-6"
           >
             <div
@@ -192,6 +193,7 @@ defmodule CortexWeb.JidoComponents.ChatPanel do
             <div
               :for={{dom_id, msg} <- @streams.messages}
               id={dom_id}
+              data-message-id={msg.id}
               class={[
                 "flex",
                 message_alignment(msg.message_type)

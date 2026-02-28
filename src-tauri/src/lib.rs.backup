@@ -1,0 +1,387 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::Duration;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
+use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::ShellExt;
+
+const PRODUCT_NAME: &str = "Cortex";
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // Initialize logging
+    let log_file = setup_logging();
+    log_to_file(&log_file, "========================================");
+    log_to_file(&log_file, "Tauri Application Starting");
+    log_to_file(&log_file, &format!("Platform: {}", std::env::consts::OS));
+    log_to_file(
+        &log_file,
+        &format!("Architecture: {}", std::env::consts::ARCH),
+    );
+    log_to_file(&log_file, &format!("Start time: {}", chrono::Local::now()));
+    log_to_file(&log_file, "========================================");
+    // Shared state for backend process handle
+    let backend_child: Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>> =
+        Arc::new(Mutex::new(None));
+    let backend_child_clone = backend_child.clone();
+    let log_file_clone = log_file.clone();
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app
+                .get_webview_window("main")
+                .expect("no main window")
+                .set_focus();
+        }))
+        .setup(move |app| {
+            log_to_file(&log_file, "Entered setup function");
+            
+            // Get an available port
+            let port = get_free_port();
+            log_to_file(&log_file, &format!("Selected dynamic port: {}", port));
+            println!("Selected dynamic port: {}", port);
+            // System Tray Setup
+            log_to_file(&log_file, "Setting up system tray...");
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+            log_to_file(&log_file, "System tray menu created");
+            let backend_child_for_tray = backend_child.clone();
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "quit" => {
+                        let app_handle = app.clone();
+                        let backend_child_inner = backend_child_for_tray.clone();
+                        let log_file_inner = log_file_clone.clone();
+                        // Capture port variable
+                        let shutdown_url = format!("http://localhost:{}/api/system/shutdown", port);
+                        tauri::async_runtime::spawn(async move {
+                            log_to_file(
+                                &log_file_inner,
+                                "========================================",
+                            );
+                            log_to_file(&log_file_inner, "User triggered shutdown from tray");
+                            log_to_file(
+                                &log_file_inner,
+                                &format!("Shutdown time: {}", chrono::Local::now()),
+                            );
+                            let client = reqwest::Client::builder()
+                                .timeout(std::time::Duration::from_secs(2))
+                                .build()
+                                .unwrap();
+                            
+                            // Send graceful shutdown via HTTP API
+                            log_to_file(&log_file_inner, "Sending shutdown signal to backend...");
+                            println!("Sending shutdown signal to backend...");
+                            let _ = client.post(&shutdown_url).send().await;
+                            log_to_file(&log_file_inner, "Shutdown signal sent");
+                            
+                            // Wait 300ms for backend to respond (reduced from 500ms)
+                            log_to_file(&log_file_inner, "Waiting for backend to respond (300ms)...");
+                            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+                            // Force kill backend process tree as backup
+                            log_to_file(&log_file_inner, "Force killing backend process tree...");
+                            if let Ok(mut child_guard) = backend_child_inner.lock() {
+                                if let Some(child) = child_guard.take() {
+                                    let pid = child.pid();
+                                    log_to_file(&log_file_inner, &format!("Killing PID: {}", pid));
+                                    
+                                    // Windows: Use taskkill /F /T to kill process tree
+                                    #[cfg(target_os = "windows")]
+                                    {
+                                        let _ = std::process::Command::new("taskkill")
+                                            .args(&["/F", "/T", "/PID", &pid.to_string()])
+                                            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                                            .output();
+                                    }
+                                    
+                                    // Unix: Use kill -9 to kill process group
+                                    #[cfg(not(target_os = "windows"))]
+                                    {
+                                        let _ = std::process::Command::new("kill")
+                                            .args(&["-9", &format!("-{}", pid)])
+                                            .output();
+                                    }
+                                    
+                                    log_to_file(&log_file_inner, "Process tree killed");
+                                }
+                            }
+                            log_to_file(&log_file_inner, "Tauri application exiting...");
+                            log_to_file(
+                                &log_file_inner,
+                                "========================================",
+                            );
+                            app_handle.exit(0);
+                        });
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .build(app)?;
+            log_to_file(&log_file, "System tray built successfully");
+            
+            let handle = app.handle().clone();
+            let log_file_for_backend = log_file.clone();
+            log_to_file(&log_file, "About to spawn backend initialization task...");
+            // Async start Phoenix backend
+            tauri::async_runtime::spawn(async move {
+                log_to_file(&log_file_for_backend, "Starting backend initialization...");
+                match start_backend(&handle, port, backend_child_clone, &log_file_for_backend).await {
+                    Ok(_) => {
+                        log_to_file(&log_file_for_backend, "Backend started successfully");
+                    }
+                    Err(e) => {
+                        let error_msg = format!("FATAL: Failed to start {} backend: {}", PRODUCT_NAME, e);
+                        log_to_file(&log_file_for_backend, &error_msg);
+                        eprintln!("{}", error_msg);
+                    }
+                }
+            });
+            log_to_file(&log_file, "Backend initialization task spawned");
+            log_to_file(&log_file, "Setup function completed successfully");
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                window.hide().unwrap();
+                api.prevent_close();
+            }
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+fn setup_logging() -> Arc<Mutex<PathBuf>> {
+    // Get executable directory
+    let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = exe_path.parent().unwrap_or(std::path::Path::new("."));
+    // Create logs directory
+    let log_dir = exe_dir.join("logs");
+    let _ = std::fs::create_dir_all(&log_dir);
+    // Create log file path (with timestamp)
+    let log_file = log_dir.join("tauri.log");
+    Arc::new(Mutex::new(log_file))
+}
+fn log_to_file(log_file: &Arc<Mutex<PathBuf>>, message: &str) {
+    if let Ok(path) = log_file.lock() {
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path.as_path())
+        {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+            let _ = writeln!(file, "[{}] {}", timestamp, message);
+        }
+    }
+}
+fn get_free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .unwrap_or(4000)
+}
+async fn start_backend(
+    handle: &tauri::AppHandle,
+    port: u16,
+    backend_child: Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>,
+    log_file: &Arc<Mutex<PathBuf>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri_plugin_shell::ShellExt;
+    
+    log_to_file(log_file, &format!("Starting {} backend on port {}...", PRODUCT_NAME, port));
+    log_to_file(log_file, &format!("Platform: {}", std::env::consts::OS));
+    log_to_file(log_file, &format!("Architecture: {}", std::env::consts::ARCH));
+    
+    println!("Starting {} backend on port {}...", PRODUCT_NAME, port);
+    println!("Platform: {}", std::env::consts::OS);
+    println!("Architecture: {}", std::env::consts::ARCH);
+    
+    // Setup backend log files
+    let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = exe_path.parent().unwrap_or(std::path::Path::new("."));
+    let log_dir = exe_dir.join("logs");
+    let backend_stdout_log = log_dir.join("backend_stdout.log");
+    let backend_stderr_log = log_dir.join("backend_stderr.log");
+    
+    log_to_file(log_file, &format!("Backend stdout log: {:?}", backend_stdout_log));
+    log_to_file(log_file, &format!("Backend stderr log: {:?}", backend_stderr_log));
+    
+    // Start Phoenix backend (Tauri will auto-select platform binary)
+    // Set key environment variables for desktop mode
+    log_to_file(log_file, "Building sidecar command...");
+    let sidecar_command = match handle.shell().sidecar("cortex_backend") {
+        Ok(cmd) => {
+            log_to_file(log_file, "Sidecar command created successfully");
+            cmd
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to create sidecar command: {}", e);
+            log_to_file(log_file, &error_msg);
+            return Err(error_msg.into());
+        }
+    };
+    
+    let sidecar_command = sidecar_command
+        .env("PORT", port.to_string())
+        .env("MIX_ENV", "prod")
+        .env("RELEASE_NAME", "cortex")
+        .env("PHX_SERVER", "true")
+        .env("DESKTOP_MODE", "true");
+    
+    log_to_file(log_file, "Environment variables set:");
+    log_to_file(log_file, &format!("  PORT={}", port));
+    log_to_file(log_file, "  MIX_ENV=prod");
+    log_to_file(log_file, "  RELEASE_NAME=cortex");
+    log_to_file(log_file, "  PHX_SERVER=true");
+    log_to_file(log_file, "  DESKTOP_MODE=true");
+    
+    log_to_file(log_file, "Spawning backend process...");
+    let (mut rx, child) = match sidecar_command.spawn() {
+        Ok(result) => {
+            log_to_file(log_file, &format!("Backend process spawned with PID: {}", result.1.pid()));
+            result
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to spawn backend process: {}", e);
+            log_to_file(log_file, &error_msg);
+            return Err(error_msg.into());
+        }
+    };
+    
+    // Save child process handle for later termination
+    if let Ok(mut child_guard) = backend_child.lock() {
+        *child_guard = Some(child);
+    }
+    
+    // Capture backend output in background
+    let log_file_clone = log_file.clone();
+    let backend_stdout_log_clone = backend_stdout_log.clone();
+    let backend_stderr_log_clone = backend_stderr_log.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut stdout_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&backend_stdout_log_clone)
+            .ok();
+        let mut stderr_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&backend_stderr_log_clone)
+            .ok();
+            
+        while let Some(event) = rx.recv().await {
+            match event {
+                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                    if let Some(ref mut f) = stdout_file {
+                        let _ = writeln!(f, "{}", String::from_utf8_lossy(&line));
+                    }
+                    log_to_file(&log_file_clone, &format!("[BACKEND STDOUT] {}", String::from_utf8_lossy(&line)));
+                }
+                tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                    if let Some(ref mut f) = stderr_file {
+                        let _ = writeln!(f, "{}", String::from_utf8_lossy(&line));
+                    }
+                    log_to_file(&log_file_clone, &format!("[BACKEND STDERR] {}", String::from_utf8_lossy(&line)));
+                }
+                tauri_plugin_shell::process::CommandEvent::Error(err) => {
+                    log_to_file(&log_file_clone, &format!("[BACKEND ERROR] {}", err));
+                }
+                tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                    log_to_file(&log_file_clone, &format!("[BACKEND TERMINATED] code: {:?}, signal: {:?}", payload.code, payload.signal));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+    
+    log_to_file(log_file, "Backend process started, waiting for it to be ready...");
+    println!("Backend process started, waiting for it to be ready...");
+    // Poll to check backend readiness
+    let mut attempts = 0;
+    let max_attempts = 60;
+    let base_url = format!("http://localhost:{}", port);
+    let health_url = format!("{}/api/system/health", base_url);
+    
+    log_to_file(log_file, &format!("Starting health check polling: {}", health_url));
+    log_to_file(log_file, &format!("Max attempts: {}", max_attempts));
+    
+    loop {
+        attempts += 1;
+        
+        if attempts > max_attempts {
+            let error_msg = format!("Backend failed to start after {} attempts", max_attempts);
+            log_to_file(log_file, &error_msg);
+            return Err(error_msg.into());
+        }
+        
+        log_to_file(log_file, &format!("Health check attempt {}/{}", attempts, max_attempts));
+        
+        match reqwest::get(&health_url).await {
+            Ok(response) if response.status().is_success() => {
+                let success_msg = format!("Backend is ready after {} attempts!", attempts);
+                log_to_file(log_file, &success_msg);
+                println!("{}", success_msg);
+                break;
+            }
+            Ok(response) => {
+                let status_msg = format!(
+                    "Backend responded with status: {} (attempt {})",
+                    response.status(),
+                    attempts
+                );
+                log_to_file(log_file, &status_msg);
+                println!("{}", status_msg);
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+            Err(e) => {
+                if attempts % 5 == 0 {
+                    let wait_msg = format!(
+                        "Waiting for backend... (attempt {}/{}): {}",
+                        attempts, max_attempts, e
+                    );
+                    log_to_file(log_file, &wait_msg);
+                    println!("{}", wait_msg);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+        }
+    }
+    
+    // Open main window
+    log_to_file(log_file, "Opening main window...");
+    log_to_file(log_file, &format!("Window URL: {}", base_url));
+    
+    match WebviewWindowBuilder::new(
+        handle,
+        "main",
+        WebviewUrl::External(base_url.parse().unwrap()),
+    )
+    .title(PRODUCT_NAME)
+    .inner_size(1200.0, 800.0)
+    .center()
+    .build() {
+        Ok(_) => {
+            log_to_file(log_file, "Main window opened successfully");
+            println!("Main window opened successfully");
+            Ok(())
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to open main window: {}", e);
+            log_to_file(log_file, &error_msg);
+            Err(error_msg.into())
+        }
+    }
+}

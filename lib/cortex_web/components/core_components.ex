@@ -94,11 +94,33 @@ defmodule CortexWeb.CoreComponents do
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    variants = %{"primary" => "btn-primary", nil => "btn-primary btn-soft"}
+    # 使用自定义样式替代 daisyUI
+    base_classes = [
+      "relative inline-flex items-center justify-center",
+      "px-4 py-2 rounded-lg font-medium text-sm",
+      "transition-all duration-200 ease-out",
+      "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900",
+      "disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none",
+      # 触觉反馈
+      "active:scale-[0.98] active:translate-y-[1px]"
+    ]
+    
+    variant_classes = case assigns[:variant] do
+      "primary" -> [
+        "bg-teal-600 hover:bg-teal-500 text-white",
+        "focus:ring-teal-400/50",
+        "shadow-sm hover:shadow-md"
+      ]
+      _ -> [
+        "bg-slate-800 hover:bg-slate-700 text-slate-200",
+        "border border-slate-700",
+        "focus:ring-slate-400/50"
+      ]
+    end
 
     assigns =
       assign_new(assigns, :class, fn ->
-        ["btn", Map.fetch!(variants, assigns[:variant])]
+        base_classes ++ variant_classes
       end)
 
     if rest[:href] || rest[:navigate] || rest[:patch] do

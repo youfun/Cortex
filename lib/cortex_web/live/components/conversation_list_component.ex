@@ -22,13 +22,14 @@ defmodule CortexWeb.ConversationListComponent do
       </div>
 
       <%!-- Conversation List --%>
-      <div id="conversations" phx-update="stream" class="flex-1 overflow-y-auto">
-        <div :for={{dom_id, conv} <- @streams.conversations} id={dom_id} class="group">
+      <div id="conversations" phx-update="stream" phx-hook="StaggerList" class="flex-1 overflow-y-auto">
+        <div :for={{dom_id, conv} <- @streams.conversations} id={dom_id} data-stagger-item class="group">
           <div
             phx-click="switch_conversation"
             phx-value-id={conv.id}
             class={[
-              "px-4 py-3 cursor-pointer border-l-2 transition-colors",
+              "px-4 py-3 cursor-pointer border-l-2 transition-all duration-200",
+              "hover:translate-x-1",
               conv.id == @current_conversation_id && "bg-slate-800 border-teal-500",
               conv.id != @current_conversation_id && "border-transparent hover:bg-slate-800"
             ]}

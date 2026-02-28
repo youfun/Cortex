@@ -9,6 +9,7 @@ import { CodeMirrorHook } from "./hooks/codemirror_hook"
 
 const Hooks = {
   CodeMirrorHook,
+  
   ScrollToBottom: {
     mounted() {
       this.scrollToBottom();
@@ -18,6 +19,52 @@ const Hooks = {
     },
     scrollToBottom() {
       this.el.scrollTop = this.el.scrollHeight;
+    }
+  },
+
+  // 消息流入动画 Hook
+  MessageFadeIn: {
+    mounted() {
+      this.animateIn();
+    },
+    updated() {
+      // 检查是否有新消息
+      const messages = this.el.querySelectorAll('[data-message-id]');
+      messages.forEach((msg) => {
+        if (!msg.classList.contains('animated')) {
+          this.animateElement(msg);
+        }
+      });
+    },
+    animateIn() {
+      const messages = this.el.querySelectorAll('[data-message-id]');
+      messages.forEach((msg, index) => {
+        this.animateElement(msg, index);
+      });
+    },
+    animateElement(element, index = 0) {
+      element.classList.add('animated');
+      element.style.setProperty('--index', index);
+      element.classList.add('animate-fade-in-up');
+    }
+  },
+
+  // 交错列表动画 Hook
+  StaggerList: {
+    mounted() {
+      this.animateItems();
+    },
+    updated() {
+      this.animateItems();
+    },
+    animateItems() {
+      const items = this.el.querySelectorAll('[data-stagger-item]');
+      items.forEach((item, index) => {
+        if (!item.classList.contains('stagger-animated')) {
+          item.style.setProperty('--stagger-index', index);
+          item.classList.add('stagger-item', 'stagger-animated');
+        }
+      });
     }
   },
 

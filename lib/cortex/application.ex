@@ -11,75 +11,79 @@ defmodule Cortex.Application do
     finch_config =
       Application.get_env(:cortex, :finch, name: Cortex.Finch)
 
-    # 在生产环境或 release 模式下，自动运行数据库迁移
-    # 检测多个条件以确保在所有 release 场景下都能正确初始化数据库
-    if should_prepare_database?() do
-      prepare_database()
-    end
+    # 关键优化：将 Phoenix Endpoint 提前到第 5 个位置
+    # 确保 Desktop 模式下健康检查能快速通过（< 5 秒）
+    critical_children = [
+      {Finch, finch_config},
+      CortexWeb.Telemetry,
+      Cortex.Repo,
+      {Phoenix.PubSub, name: Cortex.PubSub},
+      CortexWeb.Endpoint  # ← 提前启动 Phoenix
+    ]
 
-    children =
-      [
-        {Finch, finch_config},
-        CortexWeb.Telemetry,
-        Cortex.Repo,
-        # 虽然我们下面手动运行了迁移，但保留这个 child spec 也是安全的，或者可以移除它
-        # {Ecto.Migrator,
-        #  repos: Application.fetch_env!(:cortex, :ecto_repos), skip: skip_migrations?()},
-        {DNSCluster, query: Application.get_env(:cortex, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: Cortex.PubSub},
-        # Signal Hub (must be started after PubSub)
-        Cortex.SignalHub,
-        Cortex.TTS.NodeManager,
-        Cortex.TTS.Worker,
-        Cortex.Messages.Writer,
-        Cortex.History.SignalRecorder,
-        # Tape Storage (Phase 2)
-        Cortex.History.Tape.Store,
-        # Memory System (Phase 1-3)
-        Cortex.Memory.Store,
-        Cortex.Memory.WorkingMemory,
-        Cortex.Memory.Subconscious,
-        Cortex.Memory.Consolidator,
-        Cortex.Memory.Preconscious,
-        Cortex.Memory.ReflectionProcessor,
-        Cortex.Channels.Supervisor,
-        {Registry, keys: :unique, name: Cortex.Registry},
-        {Task.Supervisor, name: Cortex.AgentTaskSupervisor},
-        {DynamicSupervisor, name: Cortex.SessionSupervisor, strategy: :one_for_one},
-        {Registry, keys: :unique, name: Cortex.SessionRegistry},
-        Cortex.Core.PermissionTracker,
-        # Extension Hook Registry
-        Cortex.Extensions.HookRegistry,
-        # Extension Manager
-        Cortex.Extensions.Manager,
-        # 工具注册表
-        Cortex.Tools.Registry,
-        # Search config watcher
-        Cortex.Search.ConfigWatcher,
-        # 技能系统
-        Cortex.Skills.Watcher,
-        # Jido Agent Runtime (Phase 0: Multi-Agent Coordination)
-        Cortex.Jido
-      ] ++
-        [
-          # Start to serve requests, typically the last entry
-          # This is a valid child spec (module name)
-          CortexWeb.Endpoint
-        ]
+    # 非关键服务可以在 Phoenix 启动后再加载
+    background_children = [
+      {DNSCluster, query: Application.get_env(:cortex, :dns_cluster_query) || :ignore},
+      # Signal Hub (must be started after PubSub)
+      Cortex.SignalHub,
+      Cortex.TTS.NodeManager,
+      Cortex.TTS.Worker,
+      Cortex.Messages.Writer,
+      Cortex.History.SignalRecorder,
+      # Tape Storage (Phase 2)
+      Cortex.History.Tape.Store,
+      # Memory System (Phase 1-3)
+      Cortex.Memory.Store,
+      Cortex.Memory.WorkingMemory,
+      Cortex.Memory.Subconscious,
+      Cortex.Memory.Consolidator,
+      Cortex.Memory.Preconscious,
+      Cortex.Memory.ReflectionProcessor,
+      Cortex.Channels.Supervisor,
+      {Registry, keys: :unique, name: Cortex.Registry},
+      {Task.Supervisor, name: Cortex.AgentTaskSupervisor},
+      {DynamicSupervisor, name: Cortex.SessionSupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Cortex.SessionRegistry},
+      Cortex.Core.PermissionTracker,
+      # Extension Hook Registry
+      Cortex.Extensions.HookRegistry,
+      # Extension Manager
+      Cortex.Extensions.Manager,
+      # 工具注册表
+      Cortex.Tools.Registry,
+      # Search config watcher
+      Cortex.Search.ConfigWatcher,
+      # 技能系统
+      Cortex.Skills.Watcher,
+      # Jido Agent Runtime (Phase 0: Multi-Agent Coordination)
+      Cortex.Jido
+    ]
+
+    # Desktop 模式下添加 ExTauri.ShutdownManager
+    children = critical_children ++ background_children ++ maybe_shutdown_manager()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Cortex.Supervisor]
 
-    case Supervisor.start_link(children, opts) do
-      {:ok, pid} ->
-        # 启动后加载种子数据和缓存
-        load_model_metadata()
-        {:ok, pid}
+    result = Supervisor.start_link(children, opts)
 
-      error ->
-        error
+    # 异步执行数据库迁移和初始化，避免阻塞 Phoenix 启动
+    if should_prepare_database?() do
+      Task.start(fn ->
+        Logger.info("[Application] Starting background initialization...")
+        prepare_database()
+        # 等待 Repo 完全启动
+        Process.sleep(500)
+        load_model_metadata()
+        Logger.info("[Application] Background initialization completed")
+      end)
+    else
+      # 非 release 模式下仍然同步加载元数据
+      load_model_metadata()
     end
+
+    result
   end
 
   # Tell Phoenix to update the endpoint configuration
@@ -88,6 +92,15 @@ defmodule Cortex.Application do
   def config_change(changed, _new, removed) do
     CortexWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  # Desktop 模式下启动 ExTauri.ShutdownManager
+  defp maybe_shutdown_manager do
+    if System.get_env("DESKTOP_MODE") == "true" do
+      [ExTauri.ShutdownManager]
+    else
+      []
+    end
   end
 
   # 判断是否需要准备数据库（运行迁移）
