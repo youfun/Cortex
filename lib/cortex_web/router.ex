@@ -56,7 +56,7 @@ defmodule CortexWeb.Router do
     # 2. GUI 桌面模式 (DESKTOP_MODE=true)
     # 只有在生产环境的 server 部署时才需要认证
     cond do
-      Mix.env() == :dev ->
+      Application.get_env(:cortex, :env) == :dev ->
         # 开发环境直接放行
         conn
 

@@ -100,6 +100,45 @@ let max_attempts = 60;
 
 ## 常见问题
 
+### 问题 0：Mix.env() 在 Release 中不可用（已修复）
+
+**症状**：Backend 启动后立即报错
+
+```
+** (UndefinedFunctionError) function Mix.env/0 is undefined (module Mix is not available)
+    Mix.env()
+    (cortex 0.1.40) lib/cortex_web/router.ex:59: CortexWeb.Router.check_auth/2
+```
+
+**原因**：在编译后的二进制文件（release/burrito）中，Mix 模块不可用，但 `lib/cortex_web/router.ex:59` 调用了 `Mix.env()`
+
+**解决方案**（已在 2026-03-01 修复）：
+
+将 `lib/cortex_web/router.ex` 中的 `Mix.env()` 替换为 `Application.get_env(:cortex, :env)`：
+
+```elixir
+# 修改前（错误）
+cond do
+  Mix.env() == :dev ->
+    conn
+  ...
+end
+
+# 修改后（正确）
+cond do
+  Application.get_env(:cortex, :env) == :dev ->
+    conn
+  ...
+end
+```
+
+配置文件 `config/config.exs` 中已有：
+```elixir
+config :cortex, env: config_env()
+```
+
+**验证**：重新构建后，使用 `export PHX_SERVER="true"` 启动二进制，应该不再报错。
+
 ### 问题 1：Phoenix 服务器没有启动
 
 **症状**：Backend 进程运行但没有监听端口
