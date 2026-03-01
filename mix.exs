@@ -1,10 +1,12 @@
 defmodule Cortex.MixProject do
   use Mix.Project
 
+  @base_version "0.1.41"
+
   def project do
     [
       app: :cortex,
-      version: "0.1.40",
+      version: version(),
       elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -117,6 +119,30 @@ defmodule Cortex.MixProject do
         ]
       ]
     ]
+  end
+
+  # 动态版本号生成策略
+  # - main/master 分支：使用基础版本号（如 0.1.41）
+  # - dev/pre-release 分支：添加构建信息（如 0.1.41+build.105.a1b2c3d）
+  defp version do
+    case System.get_env("APP_VERSION") do
+      nil ->
+        # 本地开发：使用基础版本 + Git 信息
+        case System.cmd("git", ["rev-parse", "--short", "HEAD"], stderr_to_stdout: true) do
+          {sha, 0} ->
+            sha = String.trim(sha)
+            case System.cmd("git", ["rev-list", "--count", "HEAD"], stderr_to_stdout: true) do
+              {count, 0} -> "#{@base_version}+build.#{String.trim(count)}.#{sha}"
+              _ -> "#{@base_version}+dev"
+            end
+          _ ->
+            "#{@base_version}+dev"
+        end
+      
+      version ->
+        # GitHub Actions：使用传入的版本号
+        version
+    end
   end
 
   # Aliases are shortcuts or tasks specific to the current project.

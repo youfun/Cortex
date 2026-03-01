@@ -13,23 +13,40 @@ echo "当前环境: $MIX_ENV"
 # 2. Burrito 输出路径（按你项目实际情况改）
 BACKEND_SRC="burrito_out/cortex_windows.exe"
 
-# 3. 同步版本号
+# 3. 同步版本号（自动递增）
 echo ""
-echo "🔄 同步版本号...注意版本号不改，可能会导致安装后缓存不更新从而软件实际还是旧版本"
+echo "🔄 自动递增版本号..."
 
 if [[ ! -f mix.exs ]]; then
   echo "❌ 未找到 mix.exs"
   exit 1
 fi
 
-VERSION=$(grep -E 'version:\s*"[0-9.]+"' mix.exs | head -1 | sed -E 's/.*"([0-9.]+)".*/\1/')
+# 读取当前基础版本
+CURRENT_VERSION=$(grep -oP 'base_version = "\K[^"]+' mix.exs)
 
-if [[ -z "$VERSION" ]]; then
+if [[ -z "$CURRENT_VERSION" ]]; then
   echo "❌ 无法解析版本号"
   exit 1
 fi
 
-echo "检测到 Mix 版本: $VERSION"
+# 解析并递增 patch 版本
+IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+new_patch=$((patch + 1))
+NEW_VERSION="$major.$minor.$new_patch"
+
+# 更新 mix.exs
+sed -i "s/base_version = \"$CURRENT_VERSION\"/base_version = \"$NEW_VERSION\"/" mix.exs
+
+echo "版本号已更新: $CURRENT_VERSION → $NEW_VERSION"
+
+# 获取 Git 哈希
+GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+FULL_VERSION="$NEW_VERSION+$GIT_HASH"
+
+echo "完整版本: $FULL_VERSION"
+
+VERSION=$NEW_VERSION
 
 # 4. 构建 Elixir Release
 echo ""

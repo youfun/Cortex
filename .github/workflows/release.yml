@@ -34,34 +34,55 @@ jobs:
       release_tag: ${{ steps.version.outputs.release_tag }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
       should_publish: ${{ steps.version.outputs.should_publish }}
+      app_version: ${{ steps.version.outputs.app_version }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Determine version and release type
         id: version
         run: |
-          # 从 mix.exs 读取版本号
-          APP_VERSION=$(grep -oP '(?<=version: ")[^"]+' mix.exs)
           BRANCH="${{ github.ref_name }}"
-
-          echo "Branch: $BRANCH, Version: $APP_VERSION"
-
-          if [ "$BRANCH" = "main" ]; then
-            # main 分支 → 正式 release
-            echo "release_tag=v${APP_VERSION}" >> $GITHUB_OUTPUT
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-          elif [ "$BRANCH" = "pre-release" ]; then
-            # pre-release 分支 → pre-release 版本
-            echo "release_tag=v${APP_VERSION}-pre.${{ github.run_number }}" >> $GITHUB_OUTPUT
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-          else
-            # dev 或其他分支 → 只构建不发布
-            echo "release_tag=v${APP_VERSION}-${{ github.ref_name }}-${{ github.run_number }}" >> $GITHUB_OUTPUT
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-            echo "should_publish=false" >> $GITHUB_OUTPUT
+          BUILD_NUMBER="${{ github.run_number }}"
+          GIT_SHA=$(git rev-parse --short HEAD)
+          
+          # 从 mix.exs 读取基础版本号（@base_version）
+          BASE_VERSION=$(grep -oP '@base_version "\K[^"]+' mix.exs)
+          
+          if [ -z "$BASE_VERSION" ]; then
+            echo "❌ 无法从 mix.exs 读取 @base_version"
+            exit 1
           fi
+          
+          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+            # main/master 分支 → 正式版本（简洁格式）
+            APP_VERSION="${BASE_VERSION}"
+            RELEASE_TAG="v${BASE_VERSION}"
+            IS_PRERELEASE="false"
+            SHOULD_PUBLISH="true"
+            echo "📦 正式版本: ${APP_VERSION}"
+          else
+            # dev/pre-release 分支 → 带构建信息的版本
+            APP_VERSION="${BASE_VERSION}+build.${BUILD_NUMBER}.${GIT_SHA}"
+            RELEASE_TAG="v${APP_VERSION}"
+            IS_PRERELEASE="true"
+            
+            if [ "$BRANCH" = "pre-release" ] || [ "$BRANCH" = "dev" ]; then
+              SHOULD_PUBLISH="true"
+            else
+              SHOULD_PUBLISH="false"
+            fi
+            echo "🔧 测试版本: ${APP_VERSION}"
+          fi
+          
+          echo "Branch: $BRANCH"
+          echo "Version: $APP_VERSION"
+          echo "Release Tag: $RELEASE_TAG"
+          
+          # 输出供后续步骤使用
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "should_publish=$SHOULD_PUBLISH" >> $GITHUB_OUTPUT
 
   build-server:
     name: Server Binary (Linux x86_64)
@@ -125,9 +146,13 @@ jobs:
 
       - name: Fetch Deps
         run: mix deps.get
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
 
       - name: Compile
         run: mix compile
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
 
       - name: Build Assets
         run: |
@@ -136,6 +161,8 @@ jobs:
 
       - name: Build Server Binary (Burrito)
         run: mix release cortex --overwrite
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
 
       - name: Upload Server Artifact
         uses: actions/upload-artifact@v4
@@ -283,9 +310,13 @@ jobs:
 
       - name: Fetch Deps
         run: mix deps.get
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
 
       - name: Compile
         run: mix compile
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
 
       - name: Build Assets
         run: |
@@ -294,6 +325,8 @@ jobs:
 
       - name: Build Backend Sidecar (Burrito)
         run: mix release desktop --overwrite
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
 
       - name: Place sidecar binary for Tauri
         shell: bash
