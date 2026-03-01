@@ -35,6 +35,7 @@ jobs:
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
       should_publish: ${{ steps.version.outputs.should_publish }}
       app_version: ${{ steps.version.outputs.app_version }}
+      tauri_version: ${{ steps.version.outputs.tauri_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,6 +57,7 @@ jobs:
           if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
             # main/master 分支 → 正式版本（简洁格式）
             APP_VERSION="${BASE_VERSION}"
+            TAURI_VERSION="${BASE_VERSION}"
             RELEASE_TAG="v${BASE_VERSION}"
             IS_PRERELEASE="false"
             SHOULD_PUBLISH="true"
@@ -63,6 +65,8 @@ jobs:
           else
             # dev/pre-release 分支 → 带构建信息的版本
             APP_VERSION="${BASE_VERSION}+build.${BUILD_NUMBER}.${GIT_SHA}"
+            # Tauri 不支持 +build 元数据，使用 -dev.N 格式
+            TAURI_VERSION="${BASE_VERSION}-dev.${BUILD_NUMBER}"
             RELEASE_TAG="v${APP_VERSION}"
             IS_PRERELEASE="true"
             
@@ -72,14 +76,17 @@ jobs:
               SHOULD_PUBLISH="false"
             fi
             echo "🔧 测试版本: ${APP_VERSION}"
+            echo "🔧 Tauri 版本: ${TAURI_VERSION}"
           fi
           
           echo "Branch: $BRANCH"
           echo "Version: $APP_VERSION"
+          echo "Tauri Version: $TAURI_VERSION"
           echo "Release Tag: $RELEASE_TAG"
           
           # 输出供后续步骤使用
           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "tauri_version=$TAURI_VERSION" >> $GITHUB_OUTPUT
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
           echo "should_publish=$SHOULD_PUBLISH" >> $GITHUB_OUTPUT
@@ -338,9 +345,9 @@ jobs:
       - name: Sync version to Tauri config
         shell: bash
         run: |
-          # Extract version from mix.exs
-          VERSION=$(grep 'version:' mix.exs | head -n1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "Detected version: $VERSION"
+          # 使用 Tauri 兼容的版本号
+          VERSION="${{ needs.prepare.outputs.tauri_version }}"
+          echo "Setting Tauri version: $VERSION"
           
           # Update tauri.conf.json (cross-platform)
           sed "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json > tmp.json
